@@ -1,0 +1,37 @@
+# -*- mode:org; org-confirm-babel-evaluate: nil; org-todo-keyword-faces: (("[0_TODO]" . "orange") ("[1_IP..]" . "yellow") ("[2_FIX.]" . "red") ("[3_WAIT]" . "blue") ("[4_NOPE]" . "black") ("[5_DONE]" . "green")); -*-
+#+STARTUP: indent overview align
+#+OPTIONS: toc:nil num:nil title:nil \n:t author:nil H:1 f:nil
+#+TODO: [0_TODO] [1_IP..] [2_FIX.] [3_WAIT] [4_NOPE] [5_DONE]
+
+* huh
+:PROPERTIES:
+:MYPROPERTY: wut ever
+:END:
+#+BEGIN_SRC shell :var x=(org-entry-get nil "MYPROPERTY") :results output :tangle doit.sh :bin auto
+echo x
+#+END_SRC
+#+NAME: wutever
+#+RESULTS:
+: wut ever
+* wut
+:PROPERTIES:
+:WUT_EXPORT: ./file.ext
+:END:
+the name mysrcblock should capture the following source block as its value,
+as well as naming the srcblock node.
+
+the name mysrcblock_results should capture the following ~#+RESULTS~ content as its value,
+and use the above src block as its source, if ~#+END_SRC~ is the first non-whitespace line
+it encounters above it.
+#+NAME: mysrcblock
+#+BEGIN_SRC rebol3
+REBOL []
+print [ "nothing" ]
+#+END_SRC
+#+NAME: mysrcblock_results
+#+RESULTS: mysrcblock
+: nothing
+* a mess
+some text with a property val:
+[[val:myproperty]]
+inserted above
