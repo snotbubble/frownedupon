@@ -31,7 +31,86 @@ print [ "nothing" ]
 #+NAME: mysrcblock_results
 #+RESULTS: mysrcblock
 : nothing
-* a mess
+** a mess
 some text with a property val:
 [[val:myproperty]]
 inserted above
+
+* vala digestion test
+#+BEGIN_SRC vala
+void mstr (string[] s) {
+	s[1] = null;
+}
+int main (string[] args) {
+string[] h = {};
+h += "zro";
+h += "one";
+h += "two";
+mstr(h);
+for (int i = 0; i < h.length; i++) { if (h[i] != null) { print("%s\n",h[i]); } }
+return 0;
+}
+#+END_SRC
+
+#+RESULTS:
+: zro
+: two
+* vala compound conditional test
+#+BEGIN_SRC vala :tangle ./conditional.vala
+int main (string[] args) {
+string[] t = {"0", "01", "0123", "01234"};
+foreach (string s in t) {
+	if (s.length > 2 && s.substring(0,3) == "012") {
+		print("checked length: %s\n",s);
+	}
+//	if (s.substring(0,3) == "012") {
+//		print("not checked: %s\n",s);
+//	}
+}
+return 0;
+}
+#+END_SRC
+
+#+RESULTS:
+: 01234
+
+* vala foreach test
+#+BEGIN_SRC vala :tangle ./conditional.vala
+struct hhh {
+	string name;
+	string value;
+}
+hhh[] tests;
+int main (string[] args) {
+	hhh t = hhh();
+	t.name = "one";
+	t.value = "one";
+	tests += t;
+	t = hhh();
+	t.name = "two";
+	t.value = "two";
+	tests += t;
+	t = hhh();
+	t.name = "three";
+	t.value = "three";
+	tests += t;
+	foreach (unowned hhh? s in tests) {
+		if (s.name == "one") { s.value = "1"; }
+	}
+	foreach (unowned hhh s in tests) {
+		if (s.name == "two") { s.value = "2"; }
+	}
+	foreach (hhh? s in tests) {
+		if (s.name == "three") { s.value = "3"; }
+	}
+	for (int i = 0; i < tests.length; i++) {
+		print("%s.value = %s\n",tests[i].name, tests[i].value);
+	} 
+	return 0;
+}
+#+END_SRC
+
+#+RESULTS:
+: one.value = 1
+: [Invalid UTF-8] two.value = \xa8\x11
+: three.value = three

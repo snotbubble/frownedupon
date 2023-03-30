@@ -1,3 +1,5 @@
+using GLib;
+
 struct output {
 	uint id;
 	string name;
@@ -22,6 +24,8 @@ struct element {
 	output[] outputs;	// can be wired out
 	param[] params;	// local params; no wiring
 }
+string srcblock;
+int i;					// carrot. this gets passed around...
 element[] elements;
 uint qout (string n) {
 	for (int i = 0; i < elements.length; i++) {
@@ -65,10 +69,6 @@ void makememynamevar (string n, string v) {
 	elements += pb;
 }
 void makememysrcblock(string n, string c, string r, string v) {
-	// n name of block
-	// c code
-	// r result name
-	// v result
 
 	string[] lines = c.split("\n");
 	string[] h = lines[0].split(":");
@@ -83,62 +83,101 @@ void makememysrcblock(string n, string c, string r, string v) {
 	}
 }
 
-string[] lines;	// generic search
-string srcblock;	// captured source block
-string propbin;	// captured property bin
-string results;	// captures results (redundant)
-//
-//                                    getsrc
-//                                      |
-//                  getname          parsesrc
-//                     |                |
-//                     +.....+------+---+---+-------+
-//                     |     |      |       |       |
-//                     |     |      |       |     getres
-//                     |     |      |       |       |
-//                     |     |      |       |    parseres
-//                     |     |      |       |       |
-// makemeasrcelement( name, type, inp[], params[], oup) 
-//
-bool getsrc (int i) {
-// capture 1st line to extract headers later
-	srcblock = "";
-	for (int b = i; b < lines.length; b++) {
-		string bs = lines[b].strip();
-		if (bs == "") { return false; }
-		if (bs.length > 6) {
-			if (bs.substring(0,7) == "#+BEGIN") {
-				print("found a NAMEd src block: %s\n",bs);
-				for (int c = b; c < lines.length; c++) {
-					string cs = lines[c].strip();
-					if (cs.length > 4) {
-						if (cs.substring(0,5) == "#+END") {
-							//srcblock = srcblock.slice(0,(srcblock.length - 1));
-							srcblock._chomp();
-							print("\t\tcaptured source block:\n%s\n",srcblock);
-							return true;
-						}
-					}
-					srcblock = srcblock.concat(lines[c], "\n");
+bool getorgtext (string[] lines) {
+	string txtname = "prose";
+	string txt = "";
+	for (int c = i; c < lines.length; c++) {
+// move the carrot regardless
+		i = c;
+		string cs = lines[c].strip();
+		if (cs.has_prefix("#+") == false) {
+			print("[%d]\t plain text: %s\n",i,lines[c]);
+			txt = txt.concat(lines[c],"\n");
+		} else {
+			return false;
+		}
+	}
+	if (txt.length > 0) {
+		element ee = element();
+		ee.name = txtname;
+		ee.id = ee.name.hash();
+// minum text size for a [[val:v]] link
+		if (txt.length > 9) { 
+
+			if (txt.contains("[[val:")) {
+	// ok now for the dumb part:
+				string tmptxt = txt;
+				string[] l = tmptxt.split("[[val:");
+				for (int j = 1; j < l.length; j++) {
+					string[] q = l[j].split("]]");
+					input qq = input();
+					qq.name = q[0];
+					qq.id = qq.name.hash();
+					qq.org = q[0];
+					qq.defaultv = q[0];
+					ee.inputs += qq;
+					print("[%d](TXT)\tfound var: %s\n",i,q[0]);
 				}
 			}
+		}
+		elements += ee;
+		print("[%d](TXT)\tsuccessfully captured plain text\n",i);
+		return true;
+	}
+	return false;	
+}
+
+bool getorgsrc (string[] lines, bool amnamed) {
+// move off the NAME line
+	if (amnamed) { i = i + 1; }
+	srcblock = "";
+	bool amsrc = false;
+	for (int c = i; c < lines.length; c++) {
+		string cs = lines[c].strip();
+		print("[%d] \t\tchecking line : %s\n",c,cs);
+		if (cs != "" && amsrc == false) {
+			if (cs.has_prefix("#+BEGIN")) {
+				print("[%d]\t found src header: %s\n",c,lines[c]);
+				srcblock = srcblock.concat(lines[c], "\n");
+				amsrc = true; continue;
+			} else {
+				if (amnamed) { 
+// caught something blocking capture of a source block
+
+					print("[%d]\t something blocked capture: %s\n",c,lines[c]);
+					i = c;
+					return false;
+				}
+			}
+		}
+		if (amsrc) {
+			if (cs.has_prefix("#+END")) {
+				srcblock = srcblock.concat(lines[c]);
+				//srcblock._chomp();
+				print("[%d]\t\t\t captured source block:\n\t\t\t%s\n",c,srcblock.replace("\n","\n\t\t\t"));
+// move to end of src block
+				i = c;
+				return true;
+			}
+			srcblock = srcblock.concat(lines[c], "\n");
 		}
 	}
 	srcblock = "";
 	return false;
 }
-bool parsesrc (string n) {
+bool parseorgsrc (string n, string srcblock) {
+	//print("[%d] parseorgsrc (%s, %s)\n", i, n, srcblock);
 	element ee = element();
 	ee.name = n;
 	ee.id = ee.name.hash();
 // turn src code into a local param
 	string[] h = srcblock.split("\n");
 	if (h.length > 1) {
-		print("parsing source code...\n%s\n",srcblock);
-		print("src block line count is %d\n",h.length);
+		//print("[%d]\t parsing source code...\n%s\n",i,srcblock);
+		print("[%d]\t src block line count is %d\n",i,h.length);
 		string src = "";
-		for (int i = 1; i < (h.length); i++) {
-			src = src.concat(h[i],"\n");
+		for (int k = 1; k < (h.length); k++) {
+			src = src.concat(h[k],"\n");
 		}
 		src._chomp();
 		param cc = param();
@@ -149,7 +188,7 @@ bool parsesrc (string n) {
 
 // turn src type into local parameter
 	string[] hp = h[0].split(":");
-	print("looking for elemet type: %s\n",hp[0]);
+	print("[%d]\t looking for elemet type: %s\n",i,hp[0]);
 	string[] hpt = hp[0].split(" ");
 	if (hpt.length > 1) {
 		if (hpt[1] != null) { 
@@ -163,14 +202,14 @@ bool parsesrc (string n) {
 	}
 
 // get header args
-	for (int i = 1; i < hp.length; i++) {
+	for (int m = 1; m < hp.length; m++) {
 		bool notavar = false;
-		print("parsing: %s\n",hp[i]);
-		if (hp[i].length > 3) {
+		print("[%d]\t parsing: %s\n",i,hp[m]);
+		if (hp[m].length > 3) {
 
 // turn vars into inputs, sources are checked in a post-process, as the source may not exist yet
-			if (hp[i].substring(0,4) == "var ") {
-				string[] vp = hp[i].split("=");
+			if (hp[m].substring(0,4) == "var ") {
+				string[] vp = hp[m].split("=");
 				string[] o = {"",""};
 				for (int v = 0; v < vp.length; v++) {
 					string[] sp = vp[v].strip().split(" ");
@@ -186,7 +225,7 @@ bool parsesrc (string n) {
 					}
 				}
 				for (int p = 0; p < o.length; p++) { 
-					print("srcblock parameter pair: %s, %s\n", o[p], o[(p+1)]);
+					print("[%d]\t srcblock parameter pair: %s, %s\n", i, o[p], o[(p+1)]);
 					input ip = input();
 					ip.name = o[p];							// name
 					ip.id = ip.name.hash();					// id, probably redundant
@@ -201,7 +240,7 @@ bool parsesrc (string n) {
 
 // turn the other args into local params, parser duped for incasement
 		if (notavar) {
-			if (hp[i].length > 2) {
+			if (hp[m].length > 2) {
 				string[] rp = hp[i].split("=");
 				string[] ro = {"",""};
 				for (int v = 0; v < rp.length; v++) {
@@ -218,7 +257,7 @@ bool parsesrc (string n) {
 					}
 				}
 				for (int p = 0; p < ro.length; p++) { 
-					print("srcblock parameter pair: %s, %s\n", ro[p], ro[(p+1)]);
+					print("[%d] srcblock parameter pair: %s, %s\n", i, ro[p], ro[(p+1)]);
 					param pp = param();
 					pp.name = ro[p];							// name
 					pp.value = ro[(p+1)];						// value - volatile
@@ -236,92 +275,102 @@ bool parsesrc (string n) {
 	elements += ee;
 	return true;
 }
-bool getres (int i) {
-	for (int b = (i + 1); b < lines.length; b++) {
+
+bool getorgres (string[] lines, element elem, int owner) {
+	string resblock = "";
+	string resname = elem.name.concat("_result");
+	print("[%d](RES)\t result name: %s\n",i,resname);
+	bool notnamed = true;
+	bool amresult = false;
+	for (int b = (i+1); b < lines.length; b++) {
 		string bs = lines[b].strip();
-		if (bs == "") { return false; }
-		if (bs.length > 6) {
-			if (bs.substring(0,7) == "#+BEGIN") {
-				print("\tfound a NAMEd src block: %s\n",bs);
-				print("\t\tcheck b: %d, lines.length: %d\n",b,lines.length);
-				for (int c = b; c < lines.length; c++) {
-					srcblock = srcblock.concat(lines[c],"\n");
-					string cs = lines[c].strip();
-					if (cs.length > 4) {
-						print("\t\tcheck substring for END...\n");
-						if (cs.substring(0,5) == "#+END") {
-							srcblock = srcblock.concat(lines[c],"\n");
-							print("\t\tcaptured source block\n");
-							return true;
-						}
+
+// skip newlines
+		if (bs != "") {
+
+// look for a name 1st..
+			if (bs.has_prefix("#+NAME:")) {
+				if (notnamed) { 
+					string[] bsp = bs.split(" ");
+					if (bsp.length == 2) {
+						resname = bsp[1];
+						continue;
+					} else {
+
+// hit a non-capturing name that blocks result, set line position and abort...
+						i = b;
+						print("[%d](RES)\t hit a non-capturing NAME: %s\n",i,bs);
+						return false;
 					}
+					notnamed = false;
+				} else {
+
+// 2nd name blocks result, set line and abort...
+					i = b;
+					print("[%d](RES)\t hit a second name block: %s\n",i,bs);
+					return false;
+				}
+			}		
+
+// if capturing result...
+			if (amresult) {
+
+// only recognizes : output for now
+				if (bs.has_prefix(": ")) { 
+					resblock = resblock.concat(lines[b],"\n");
+				} else { 
+
+// done capturing result, set element output value, exit
+					amresult = false;
+					if (resblock.strip() != "") { 
+						resblock = resblock.slice(2,(resblock.length - 1));
+						elem.outputs[owner].value = resblock._chomp();
+					}
+
+// set output name regardless of value
+					elem.outputs[owner].name = resname;
+					i = b;
+					print("[%d](RES)\t captured result: %s\n",i,resname);
+					return true;
+				}
+			} else { 
+
+// ignore results: name, its volatile
+				if (bs.has_prefix("#+RESULTS:")) {
+
+// found a result, set to capture mode...
+					amresult = true; continue;
+				} else {
+
+// something blocks result, set line and abort...
+					i = b;
+					print("[%d](RES)\t something blocked the result: %s\n",i,bs);
+					return false;
 				}
 			}
 		}
 	}
 	return false;
 }
-void main (string[] args) {
-// dummy data
-string sorg = """* an aricle
-:PROPERTIES:
-:STATE: ACT
-:END:
-
-#+NAME: postcode 12345
-
-#+NAME: burb
-#+BEGIN_SRC shell :var x="Tuggeranong" y = "Fadden"
-echo $x
-.
-#+END_SRC
-
-#+NAME: burb_result
-#+RESULTS:
-: Tuggeranong
-
-send it to:
-[[val:burb_result]] [[val:STATE]] [[val:postcode]] Australia
-
-""";
-propbin = "";
-srcblock = "";
-results = "";
-lines = sorg.split("\n");
-for (int i = 0; i < lines.length; i++) {
-	string ls = lines[i].strip();
-	if (ls.length > 0) {
-		//print("checking line: %s\n",lines[i]);
-		bool allgood = false;
-		if (ls == ":PROPERTIES:") {
-// search for end of property bin
-// TODO: add line limit
-			for (int b = i; b < lines.length; b++) {
-				propbin = propbin.concat(lines[b],"\n");
-				if (lines[b].strip() == ":END:") {
-					allgood = true; break;
-				}
-			}
-			if (allgood) {
-				print("found a propbin:\n%s\n",propbin);
-				makememyprops(propbin);
-			}
-			propbin = ""; allgood = false;
-		}
-		if (ls.length > 6) {
-			if (ls.substring(0,7) == "#+NAME:") {
-				string[] lsp = ls.split(" ");
-				if (lsp.length == 3) {
-					print("\tfound a #+NAME one-liner: var=%s, val=%s\n\n",lsp[1],lsp[2]);
-					makememynamevar(lsp[1],lsp[2]);
-				}
-				if (lsp.length == 2) {
-// find something to capture,
-					print("\tsearching for something NAMEd...\n");
-					if (getsrc(i)) {
-						print("\tparsing srouce block: %s...\n",lsp[1]);
-						if (parsesrc(lsp[1])) {
-							print("parsed src block:\n");
+void crosscheck () {
+	if (elements.length > 0) {
+		foreach (unowned element? e in elements) {
+			//print("[E]%s\n",e.name);
+			if (e.inputs.length > 0) {
+				foreach (unowned input? u in e.inputs) {
+					//print("[I]\t%s\n",u.name);
+					foreach (unowned element? ee in elements) {
+						//print("[E]\t\t%s\n",ee.name);
+						if (ee.outputs.length > 0) {
+							foreach (unowned output? o in ee.outputs) {
+								//print("[O]\t\t\t%s\n",o.name);
+								if (o.name == u.name) {
+									u.source = o.id;
+									//print("[R]\t\t\t\tLINKED %u to %u\n",o.id,u.source);
+									u.value = o.value;
+									//print("[R]\t\t\t\tVALUE: %s\n",u.value);
+								}
+							}
 						}
 					}
 				}
@@ -329,20 +378,84 @@ for (int i = 0; i < lines.length; i++) {
 		}
 	}
 }
-foreach (element e in elements) {
-	print("element: %s\n",e.name);
-	for (int i = 0; i < e.outputs.length; i++) {
-		print("\toutput %s: %s\n",e.outputs[i].name,e.outputs[i].value);
+
+void main (string[] args) {
+// load test file
+	string ff = Path.build_filename ("./", "testme.org");
+	File og = File.new_for_path(ff);
+	string sorg = "";
+	try {
+		uint8[] c; string e;
+		og.load_contents (null, out c, out e);
+		sorg = (string) c;
+	} catch (Error e) {
+		print ("failed to read %s: %s\n", og.get_path(), e.message);
 	}
-	for (int i = 0; i < e.inputs.length; i++) {
-		print("\tinput %s: %s\n",e.inputs[i].name,e.inputs[i].value);
+	if (sorg.strip() != "") {
+		string propbin = "";
+		srcblock = "";
+		string results = "";
+		string resblock = "";
+		i = 0;
+		string[] lines = sorg.split("\n");
+		for (i = 0; i < lines.length; i++) {
+			string srcname = "";
+			string ls = lines[i].strip();
+			if (ls.length > 0) {
+				//print("checking line: %s\n",lines[i]);
+				bool allgood = false;
+				if (ls == ":PROPERTIES:") {
+		// search for end of property bin
+		// TODO: add line limit
+					for (int b = i; b < lines.length; b++) {
+						propbin = propbin.concat(lines[b],"\n");
+						if (lines[b].strip() == ":END:") {
+							allgood = true; break;
+						}
+					}
+					if (allgood) {
+						makememyprops(propbin);
+						print("[%d] found a propbin:\n\t%s\n",i,propbin.replace("\n","\n\t"));
+					}
+					propbin = ""; allgood = false;
+				}
+				if (ls.has_prefix("#+NAME:")) {
+					string[] lsp = ls.split(" ");
+					if (lsp.length == 3) {
+						print("[%d] found a #+NAME one-liner: var=%s, val=%s\n\n",i,lsp[1],lsp[2]);
+						makememynamevar(lsp[1],lsp[2]);
+					}
+					if (lsp.length == 2) { 
+						srcname = lsp[1]; 
+						print("[%d] found a #+NAME capture: %s\n",i,srcname);
+						if (getorgsrc(lines,true)) {
+							if (parseorgsrc(srcname,srcblock)) {
+								print("[%d]\t parsed and captured src block\n",i);
+								if (getorgres(lines,elements[(elements.length - 1)],0)) {
+									print("[%d]\t\t captured src block result\n",i);
+								}
+							}
+						}
+					}
+				}
+		// capture plain text
+				if (ls.has_prefix("#+") == false && ls.has_prefix(":") == false && ls.has_prefix("*") == false) {
+					getorgtext(lines);
+				}
+			}
+		}
+		crosscheck();
+		foreach (element e in elements) {
+			print("element: %s\n",e.name);
+			foreach (output o in e.outputs) {
+				print("\toutput %s: %s\n",o.name,o.value);
+			}
+			foreach (input u in e.inputs) {
+				print("\tinput: | %s | %u | %s |\n",u.name,u.source,u.value);
+			}
+			foreach (param p in e.params) {
+				print("\tparam %s: %s\n",p.name,p.value);
+			}
+		}
 	}
-	for (int i = 0; i < e.params.length; i++) {
-		print("\tparam %s: %s\n",e.params[i].name,e.params[i].value);
-	}
-}
-	// AA links to CC and EE
-	// BB links to EE
-	// DD links to BB
-	// CC links to BB
 }
