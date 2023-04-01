@@ -24,9 +24,15 @@ struct element {
 	output[] outputs;	// can be wired out
 	param[] params;	// local params; no wiring
 }
+
+// globals
+// avoid dicking-around with refs, owned, unowned and other vala limitations
+
 string srcblock;
 int i;					// carrot. this gets passed around...
+string[] hvars;		// header vars
 element[] elements;
+
 uint qout (string n) {
 	for (int i = 0; i < elements.length; i++) {
 		for (int q = 0; q < elements[i].outputs.length; q++) {
@@ -35,6 +41,48 @@ uint qout (string n) {
 	}
 	return -1;
 }
+
+// modulo from 'cdeerinck'
+// https://stackoverflow.com/questions/41180292/negative-number-modulo-in-swift#41180619
+
+int imod (int l, int r) {
+	if (l >= 0) { return (l % r); }
+	if (l >= -r) { return (l + r); }
+	return ((l % r) + r) % r;
+}
+
+// capture src block header vars
+
+void capcap (string s) {
+	string c = s.substring(0,1);
+	string d = "\"({[\'";
+	if (d.contains(c)) {
+		if (s.has_prefix(c)) {
+			if (c == "(") { c = ")"; }
+			if (c == "[") { c = "]"; }
+			if (c == "{") { c = "}"; }
+			if (c == "<") { c = ">"; }
+			int lidx = s.last_index_of(c) + 1;
+			string vl = s.substring(0,lidx);
+			string vr = s.substring(lidx).strip();
+			lidx = vr.index_of(" ") + 1;
+			if (lidx > 0 && lidx <= s.length) {
+				vr = vr.substring(lidx).strip();
+			}
+			hvars += vl;
+			hvars += vr;
+		}
+	} else {
+		int lidx = s.index_of(" ") + 1;
+		if (lidx > 0 && lidx <= s.length) {
+			string vl = s.substring(0,lidx);
+			string vr = s.substring(lidx).strip();
+			hvars += vl;
+			hvars += vr;
+		}
+	}
+}
+
 void makememyprops (string b) {
 	string[] lines = b.split("\n");
 	for (int i = 0; i < lines.length; i++) {
@@ -69,7 +117,6 @@ void makememynamevar (string n, string v) {
 	elements += pb;
 }
 void makememysrcblock(string n, string c, string r, string v) {
-
 	string[] lines = c.split("\n");
 	string[] h = lines[0].split(":");
 	if (h.length > 2) {
@@ -83,69 +130,82 @@ void makememysrcblock(string n, string c, string r, string v) {
 	}
 }
 
-bool getorgtext (string[] lines) {
+bool getorgtext (int ind, string[] lines) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("[%d]%sgetorgtext started...\n",i,tabs);
 	string txtname = "prose";
-	string txt = "";
+	string[] txt = {};
 	for (int c = i; c < lines.length; c++) {
 // move the carrot regardless
 		i = c;
 		string cs = lines[c].strip();
-		if (cs.has_prefix("#+") == false) {
-			print("[%d]\t plain text: %s\n",i,lines[c]);
-			txt = txt.concat(lines[c],"\n");
+		if (cs.has_prefix("#+") == false && cs.has_prefix("|") == false && cs.has_prefix("*") == false) {
+			print("[%d]%s\tplain text: %s\n",c,tabs,lines[c]);
+			txt += lines[c];
 		} else {
-			return false;
+			break;
 		}
 	}
 	if (txt.length > 0) {
+		print("[%d]%s\tsome text was collected, checking it...\n",i,tabs);
 		element ee = element();
 		ee.name = txtname;
 		ee.id = ee.name.hash();
 // minum text size for a [[val:v]] link
-		if (txt.length > 9) { 
-
-			if (txt.contains("[[val:")) {
-	// ok now for the dumb part:
-				string tmptxt = txt;
-				string[] l = tmptxt.split("[[val:");
-				for (int j = 1; j < l.length; j++) {
-					string[] q = l[j].split("]]");
-					input qq = input();
-					qq.name = q[0];
-					qq.id = qq.name.hash();
-					qq.org = q[0];
-					qq.defaultv = q[0];
-					ee.inputs += qq;
-					print("[%d](TXT)\tfound var: %s\n",i,q[0]);
+		for (int d = 0; d < txt.length; d++) {
+			if (txt[d].length > 9) { 
+				print("[%d]%s\t\tlooking for val:var links in text...\n",i,tabs);
+				if (txt[d].contains("[[val:") && txt[d].contains("]]")) {
+// ok now for the dumb part:
+					int iidx = txt[d].index_of("[[val:");
+					int oidx = txt[d].index_of("]]") + 2;
+					string chmp = txt[d].substring(iidx,oidx);
+					//chmp = chmp.substring(vidx);
+					if (chmp != null && chmp != "") {
+						print("[%d]%s\t\t\textracted link: %s\n",i,tabs,chmp);
+						input qq = input();
+						qq.org = chmp;
+						qq.defaultv = chmp;
+						chmp = chmp.replace("]]","");
+						qq.name = chmp.split(":")[1];
+						qq.id = qq.name.hash();
+						ee.inputs += qq;
+						print("[%d]%s\t\t\tstored link ref: %s\n",i,tabs,qq.name);
+					}
 				}
 			}
 		}
 		elements += ee;
-		print("[%d](TXT)\tsuccessfully captured plain text\n",i);
+		print("[%d]%s\tsuccessfully captured plain text\n",i,tabs);
+		print("[%d]%sgetorgtext ended.\n\n",i,tabs);
 		return true;
 	}
+	print("[%d]%sgetorgtext ended.\n\n",i,tabs);
 	return false;	
 }
 
-bool getorgsrc (string[] lines, bool amnamed) {
+bool getorgsrc (int ind, string[] lines, bool amnamed) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("[%d]%sgetorgsrc started...\n",i,tabs);
 // move off the NAME line
 	if (amnamed) { i = i + 1; }
 	srcblock = "";
 	bool amsrc = false;
 	for (int c = i; c < lines.length; c++) {
 		string cs = lines[c].strip();
-		print("[%d] \t\tchecking line : %s\n",c,cs);
+		print("[%d]%s\tchecking line : %s\n",c,tabs,cs);
 		if (cs != "" && amsrc == false) {
 			if (cs.has_prefix("#+BEGIN")) {
-				print("[%d]\t found src header: %s\n",c,lines[c]);
+				print("[%d]%s\t\tfound src header: %s\n",c,tabs,lines[c]);
 				srcblock = srcblock.concat(lines[c], "\n");
 				amsrc = true; continue;
 			} else {
 				if (amnamed) { 
 // caught something blocking capture of a source block
 
-					print("[%d]\t something blocked capture: %s\n",c,lines[c]);
-					i = c;
+					print("[%d]%s\tsomething blocked capture: %s\n",c,tabs,lines[c]);
+					i = c;	
+					print("[%d]%sgetorgsrc ended.\n\n",i,tabs);
 					return false;
 				}
 			}
@@ -154,18 +214,22 @@ bool getorgsrc (string[] lines, bool amnamed) {
 			if (cs.has_prefix("#+END")) {
 				srcblock = srcblock.concat(lines[c]);
 				//srcblock._chomp();
-				print("[%d]\t\t\t captured source block:\n\t\t\t%s\n",c,srcblock.replace("\n","\n\t\t\t"));
+				print("[%d]%s\tcaptured source block:\n\t\t\t%s\n",c,tabs,srcblock.replace("\n","\n\t\t\t"));
 // move to end of src block
 				i = c;
+				print("[%d]%sgetorgsrc ended.\n\n",i,tabs);
 				return true;
 			}
 			srcblock = srcblock.concat(lines[c], "\n");
 		}
 	}
 	srcblock = "";
+	print("[%d]%sgetorgsrc ended.\n\n",i,tabs);
 	return false;
 }
-bool parseorgsrc (string n, string srcblock) {
+bool parseorgsrc (int ind, string n, string srcblock) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("[%d]%sparseorgsrc started...\n",i,tabs);
 	//print("[%d] parseorgsrc (%s, %s)\n", i, n, srcblock);
 	element ee = element();
 	ee.name = n;
@@ -174,7 +238,7 @@ bool parseorgsrc (string n, string srcblock) {
 	string[] h = srcblock.split("\n");
 	if (h.length > 1) {
 		//print("[%d]\t parsing source code...\n%s\n",i,srcblock);
-		print("[%d]\t src block line count is %d\n",i,h.length);
+		print("[%d]%s\tsrc block line count is %d\n",i,tabs,h.length);
 		string src = "";
 		for (int k = 1; k < (h.length); k++) {
 			src = src.concat(h[k],"\n");
@@ -188,7 +252,7 @@ bool parseorgsrc (string n, string srcblock) {
 
 // turn src type into local parameter
 	string[] hp = h[0].split(":");
-	print("[%d]\t looking for elemet type: %s\n",i,hp[0]);
+	print("[%d]%s\tlooking for elemet type: %s\n",i,tabs,hp[0]);
 	string[] hpt = hp[0].split(" ");
 	if (hpt.length > 1) {
 		if (hpt[1] != null) { 
@@ -197,6 +261,7 @@ bool parseorgsrc (string n, string srcblock) {
 				tt.name = "type";
 				tt.value = hpt[1];
 				ee.params += tt;
+				print("[%d]%s\t\tcaptured type parameter: %s\n",i,tabs,hpt[1]);
 			}
 		}
 	}
@@ -204,64 +269,77 @@ bool parseorgsrc (string n, string srcblock) {
 // get header args
 	for (int m = 1; m < hp.length; m++) {
 		bool notavar = false;
-		print("[%d]\t parsing: %s\n",i,hp[m]);
+		print("[%d]%s\tparsing header arg: %s\n",i,tabs,hp[m]);
 		if (hp[m].length > 3) {
 
 // turn vars into inputs, sources are checked in a post-process, as the source may not exist yet
-			if (hp[m].substring(0,4) == "var ") {
-				string[] vp = hp[m].split("=");
-				string[] o = {"",""};
-				for (int v = 0; v < vp.length; v++) {
-					string[] sp = vp[v].strip().split(" ");
-					if (sp.length <= 2) {
-						if (v == 0) { o[0] = sp[1]; }
-						if (v > 0) { 
-							if (sp[0] == null || sp[0] == "") { break; }
-							o[(o.length - 1)] = sp[0];
-							if (sp[1] == null) { break; }
-							o += sp[1];
-							o += "";
-						}
-					}
+			if (hp[m].has_prefix("var ")) {
+				string[] v = hp[m].split("=");
+				v[0] = v[0].replace("var ","").strip();
+				hvars = {v[0]};
+				for (int s = 0; s < v.length; s++) {
+					string st = v[s].strip();
+					if (st != "") { capcap(st); }
 				}
-				for (int p = 0; p < o.length; p++) { 
-					print("[%d]\t srcblock parameter pair: %s, %s\n", i, o[p], o[(p+1)]);
-					input ip = input();
-					ip.name = o[p];							// name
-					ip.id = ip.name.hash();					// id, probably redundant
-					ip.value = o[(p+1)];						// value - volatile
-					ip.org = "%s=%s".printf(o[p],o[(p+1)]);	// org syntax
-					ip.defaultv = o[(p+1)];					// fallback value if input (override) is connected then disocnnected
-					ee.inputs += ip;
+				if ((hvars.length & 1) != 0) {
+					hvars[(hvars.length - 1)] = null;
+				}
+				//foreach (string j in hvars) { if (j != null) { print("\"%s\"\n",j); } }
+				for (int p = 0; p < hvars.length; p++) {
+					if (hvars[p] != null) {
+						print("[%d]%s\t\tvar pair: %s, %s\n", i, tabs, hvars[p], hvars[(p+1)]);
+						input ip = input();
+						ip.name = hvars[p];								// name
+						ip.id = ip.name.hash();							// id, probably redundant
+						ip.value = hvars[(p+1)];							// value - volatile
+						ip.org = "%s=%s".printf(hvars[p],hvars[(p+1)]);	// org syntax
+						ip.defaultv = hvars[(p+1)];						// fallback value if input (override) is connected then disocnnected
+						ee.inputs += ip;
+					} else { break; }
 					p += 1;
 				}
 			} else { notavar = true; }
 		}
+		print("[%d]%s\tdone checking header vars...\n",i,tabs);
 
-// turn the other args into local params, parser duped for incasement
-		if (notavar) {
+// turn the other args into local params, check for enclosures
+		if (notavar && hp[m] != null) {
+			print("[%d]%s\tchecking header params...\n",i,tabs);
 			if (hp[m].length > 2) {
-				string[] rp = hp[i].split("=");
-				string[] ro = {"",""};
-				for (int v = 0; v < rp.length; v++) {
-					string[] rsp = rp[v].strip().split(" ");
-					if (rsp.length <= 2) {
-						if (v == 0) { ro[0] = rsp[1]; }
-						if (v > 0) { 
-							if (rsp[0] == null || rsp[0] == "") { break; }
-							ro[(ro.length - 1)] = rsp[0];
-							if (rsp[1] == null) { break; }
-							ro += rsp[1];
-							ro += "";
+				string[] v = hp[m].split(" ");
+				string[] o = {};
+				for (int g = 0; g < v.length; g++) {
+					if (v[g] != null && v[g] != "") {
+						string s = v[g].strip();
+						print("[%d]%s\t\tchecking param part for enclosures: %s\n",i,tabs,s);
+						string c = s.substring(0,1);
+						string d = "\"({[\'";
+						if (d.contains(c)) {
+							if (s.has_prefix(c)) {
+								if (c == "(") { c = ")"; }
+								if (c == "[") { c = "]"; }
+								if (c == "{") { c = "}"; }
+								if (c == "<") { c = ">"; }
+								int lidx = s.last_index_of(c) + 1;
+								string vl = s.substring(0,lidx);
+								print("[%d]%s\t\t\tenclosures found, capturing: %s\n",i,tabs,vl);
+								o += vl;
+							}
+						} else {
+							print("[%d]%s\t\t\tno enclosures found\n",i,tabs);
+							o += s;
 						}
 					}
 				}
-				for (int p = 0; p < ro.length; p++) { 
-					print("[%d] srcblock parameter pair: %s, %s\n", i, ro[p], ro[(p+1)]);
-					param pp = param();
-					pp.name = ro[p];							// name
-					pp.value = ro[(p+1)];						// value - volatile
-					ee.params += pp;
+				//foreach (string j in o) { if (j != null) { print("\"%s\"\n",j); } }
+				for (int p = 0; p < o.length; p++) {
+					if (o[p] != null) {
+						print("[%d]%s\t\tparam name val pair: %s, %s\n", i, tabs, o[p], o[(p+1)]);
+						param pp = param();
+						pp.name = o[p];								// name
+						pp.value = o[(p+1)];							// value - volatile
+						ee.params += pp;
+					} else { break; }
 					p += 1;
 				}
 			}
@@ -273,17 +351,21 @@ bool parseorgsrc (string n, string srcblock) {
 	rr.id = "%s".concat(rr.name).hash();
 	ee.outputs += rr;
 	elements += ee;
+	print("[%d]%sparseorgsrc ended.\n\n",i,tabs);
 	return true;
 }
 
-bool getorgres (string[] lines, element elem, int owner) {
+bool getorgres (int ind, string[] lines, element elem, int owner) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("[%d]%sgetorgres started...\n",i,tabs);
 	string resblock = "";
 	string resname = elem.name.concat("_result");
-	print("[%d](RES)\t result name: %s\n",i,resname);
+	print("[%d]%s\tresult name: %s\n",i,tabs,resname);
 	bool notnamed = true;
 	bool amresult = false;
 	for (int b = (i+1); b < lines.length; b++) {
 		string bs = lines[b].strip();
+		print("[%d]%s\tchecking line: %s\n",b,tabs,lines[b]);
 
 // skip newlines
 		if (bs != "") {
@@ -294,12 +376,14 @@ bool getorgres (string[] lines, element elem, int owner) {
 					string[] bsp = bs.split(" ");
 					if (bsp.length == 2) {
 						resname = bsp[1];
+						print("[%d]%s\t\tfound a capturing NAME, using it to name result: %s\n",b,tabs,bs);
 						continue;
 					} else {
 
 // hit a non-capturing name that blocks result, set line position and abort...
 						i = b;
-						print("[%d](RES)\t hit a non-capturing NAME: %s\n",i,bs);
+						print("[%d]%s\t\thit a non-capturing NAME: %s\n",b,tabs,bs);
+						print("[%d]%sgetorgres ended.\n\n",b,tabs);
 						return false;
 					}
 					notnamed = false;
@@ -307,7 +391,8 @@ bool getorgres (string[] lines, element elem, int owner) {
 
 // 2nd name blocks result, set line and abort...
 					i = b;
-					print("[%d](RES)\t hit a second name block: %s\n",i,bs);
+					print("[%d]%s\thit a second name block: %s\n",i,tabs,bs);
+					print("[%d]%sgetorgres ended.\n\n",i,tabs);
 					return false;
 				}
 			}		
@@ -319,24 +404,28 @@ bool getorgres (string[] lines, element elem, int owner) {
 				if (bs.has_prefix(": ")) { 
 					resblock = resblock.concat(lines[b],"\n");
 				} else { 
+					i = b;
+					print("[%d]%s\t\treached end of results...\n",i,tabs);
 
-// done capturing result, set element output value, exit
+// done capturing result, set element output value
 					amresult = false;
 					if (resblock.strip() != "") { 
+						print("[%d]%s\t\t\tstoring results...\n",i,tabs);
 						resblock = resblock.slice(2,(resblock.length - 1));
 						elem.outputs[owner].value = resblock._chomp();
 					}
 
-// set output name regardless of value
+// set output name regardless of value, then bail
 					elem.outputs[owner].name = resname;
-					i = b;
-					print("[%d](RES)\t captured result: %s\n",i,resname);
+					print("[%d]%s\t\tcaptured result as: %s\n",i,tabs,resname);
+					print("[%d]%sgetorgres ended.\n\n",i,tabs);
 					return true;
 				}
 			} else { 
 
 // ignore results: name, its volatile
 				if (bs.has_prefix("#+RESULTS:")) {
+					print("[%d]%s\t\tfound start of results block: %s\n",b,tabs,bs);
 
 // found a result, set to capture mode...
 					amresult = true; continue;
@@ -344,12 +433,14 @@ bool getorgres (string[] lines, element elem, int owner) {
 
 // something blocks result, set line and abort...
 					i = b;
-					print("[%d](RES)\t something blocked the result: %s\n",i,bs);
+					print("[%d]%s\tsomething blocked the result: %s\n",i,tabs,bs);
+					print("[%d]%sgetorgres ended.\n\n",i,tabs);
 					return false;
 				}
 			}
 		}
 	}
+	print("[%d]%sgetorgres ended.\n\n",i,tabs);
 	return false;
 }
 void crosscheck () {
@@ -381,6 +472,7 @@ void crosscheck () {
 
 void main (string[] args) {
 // load test file
+	print("loading testme.org...\n");
 	string ff = Path.build_filename ("./", "testme.org");
 	File og = File.new_for_path(ff);
 	string sorg = "";
@@ -388,8 +480,9 @@ void main (string[] args) {
 		uint8[] c; string e;
 		og.load_contents (null, out c, out e);
 		sorg = (string) c;
+		print("\ttestme.org loaded.\n");
 	} catch (Error e) {
-		print ("failed to read %s: %s\n", og.get_path(), e.message);
+		print ("\tfailed to read %s: %s\n", og.get_path(), e.message);
 	}
 	if (sorg.strip() != "") {
 		string propbin = "";
@@ -397,6 +490,7 @@ void main (string[] args) {
 		string results = "";
 		string resblock = "";
 		i = 0;
+		print("\nreading lines...\n");
 		string[] lines = sorg.split("\n");
 		for (i = 0; i < lines.length; i++) {
 			string srcname = "";
@@ -415,32 +509,43 @@ void main (string[] args) {
 					}
 					if (allgood) {
 						makememyprops(propbin);
-						print("[%d] found a propbin:\n\t%s\n",i,propbin.replace("\n","\n\t"));
+						print("[%d]\tfound a propbin:\n\t%s\n",i,propbin.replace("\n","\n\t"));
 					}
 					propbin = ""; allgood = false;
 				}
 				if (ls.has_prefix("#+NAME:")) {
 					string[] lsp = ls.split(" ");
 					if (lsp.length == 3) {
-						print("[%d] found a #+NAME one-liner: var=%s, val=%s\n\n",i,lsp[1],lsp[2]);
+						print("[%d]\tfound a #+NAME one-liner: var=%s, val=%s\n\n",i,lsp[1],lsp[2]);
 						makememynamevar(lsp[1],lsp[2]);
 					}
 					if (lsp.length == 2) { 
 						srcname = lsp[1]; 
-						print("[%d] found a #+NAME capture: %s\n",i,srcname);
-						if (getorgsrc(lines,true)) {
-							if (parseorgsrc(srcname,srcblock)) {
-								print("[%d]\t parsed and captured src block\n",i);
-								if (getorgres(lines,elements[(elements.length - 1)],0)) {
-									print("[%d]\t\t captured src block result\n",i);
+						print("[%d]\t\tfound a #+NAME capture: %s\n",i,srcname);
+						if (getorgsrc(3,lines,true)) {
+							if (parseorgsrc(4,srcname,srcblock)) {
+								print("[%d]\t\t\t\tparsed and captured src block\n",i);
+								if (getorgres(5,lines,elements[(elements.length - 1)],0)) {
+									print("[%d]\t\t\t\t\tcaptured src block result\n",i);
 								}
+							}
+						}
+					}
+				}
+				if (ls.has_prefix("#+BEGIN_SRC")) {
+					srcname = ""; srcblock = "";
+					if (getorgsrc(2, lines,false)) { 
+						if (parseorgsrc(3,srcname,srcblock)) {
+							print("[%d]\t\t\tparsed and captured src block\n",i);
+							if (getorgres(4,lines,elements[(elements.length - 1)],0)) {
+								print("[%d]\t\t\t\tcaptured src block result\n",i);
 							}
 						}
 					}
 				}
 		// capture plain text
 				if (ls.has_prefix("#+") == false && ls.has_prefix(":") == false && ls.has_prefix("*") == false) {
-					getorgtext(lines);
+					getorgtext(4,lines);
 				}
 			}
 		}
