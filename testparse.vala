@@ -90,6 +90,8 @@ string			headingname;
 heading[]		headings;		// all headers for the orgfile
 int			thisheading;	// index of current heading
 int[]			typecount;		// used for naming
+bool			spew;			// print
+bool			hard;			// print more
 
 // brute force search for output id by name
 uint qout (string n) {
@@ -117,65 +119,97 @@ uint makemeahash(string n, int t) {
 	return "%s_%d%d%d%d%d%d%d".printf(n,t,dd.get_year(),dd.get_month(),dd.get_day_of_month(),dd.get_hour(),dd.get_minute(),dd.get_microsecond()).hash();
 }
 
-// capture src block header vars
-
-void capcap (string s) {
-	string c = s.substring(0,1);
-	string d = "\"({[\'";
-	if (d.contains(c)) {
-		if (s.has_prefix(c)) {
-			if (c == "(") { c = ")"; }
-			if (c == "[") { c = "]"; }
-			if (c == "{") { c = "}"; }
-			if (c == "<") { c = ">"; }
-			int lidx = s.last_index_of(c) + 1;
-			string vl = s.substring(0,lidx);
-			string vr = s.substring(lidx).strip();
-			lidx = vr.index_of(" ") + 1;
-			if (lidx > 0 && lidx <= s.length) {
-				vr = vr.substring(lidx).strip();
-			}
-			hvars += vl;
-			hvars += vr;
-		}
-	} else {
-		int lidx = s.index_of(" ") + 1;
-		if (lidx > 0 && lidx <= s.length) {
-			string vl = s.substring(0,lidx);
-			string vr = s.substring(lidx).strip();
-			hvars += vl;
-			hvars += vr;
-		}
+int findparagraph (int l, int ind) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("[%d]%sfindparagraph started...\n",l,tabs); }
+	string txtname = "paragraph_%d".printf(typecount[0]);
+	string[] txt = {};
+	int c = 0;
+	for (c = l; c < lines.length; c++) {
+		string cs = lines[c].strip();
+		if (cs.has_prefix("*")) { break; }
+		if (cs.has_prefix("#+")) { break; }
+		if (cs.has_prefix(": ")) { break; }
+		if (cs.has_prefix(":PROPERTIES:")) { break; }
+		if (spew) { print("[%d]%s\t plain text: %s\n",c,tabs,lines[c]); }
+		txt += lines[c];
 	}
+	if (txt.length > 0) {
+		if (spew) { print("[%d]%s\ttext was collected, checking it...\n",c,tabs); }
+		element ee = element();
+		ee.name = txtname;
+		ee.id = makemeahash(ee.name,c);
+		param pp = param();
+		pp.name = ee.name.concat("_text");
+		pp.value = string.joinv("\n",txt);
+		ee.params += pp;
+		for (int d = 0; d < txt.length; d++) {
+// minum text size for a [[val:v]] link
+			if (txt[d].length > 9) { 
+				if (spew) { print("[%d]%s\t\tlooking for val:var links in text...\n",c,tabs); }
+				if (txt[d].contains("[[val:") && txt[d].contains("]]")) {
+// ok now for the dumb part:
+					string chmpme = txt[d];
+					int safeteycheck = 100;
+					while (chmpme.contains("[[val:") && chmpme.contains("]]")) {
+						int iidx = chmpme.index_of("[[val:");
+						int oidx = chmpme.index_of("]]") + 2;
+						string chmp = txt[d].substring(iidx,(oidx - iidx));
+						if (chmp != null && chmp != "") {
+							if (spew) { print("[%d]%s\t\t\textracted link: %s\n",c,tabs,chmp); }
+							input qq = input();
+							qq.org = chmp;
+							qq.defaultv = chmp;
+							chmpme = chmpme.replace(chmp,"");
+							chmp = chmp.replace("]]","");
+							qq.name = chmp.split(":")[1];
+							qq.id = makemeahash(qq.name,c);
+							ee.inputs += qq;
+							if (spew) { print("[%d]%s\t\t\tstored link ref: %s\n",c,tabs,qq.name); }
+							safeteycheck += 1;
+// suckshit if there's over 100 links in a paragraph
+							if (safeteycheck > 100) { break; }
+						}
+					}
+				}
+			}
+		}
+		headings[thisheading].elements += ee;
+		if (spew) { print("[%d]%s\tsuccessfully captured plain text\n",c,tabs); }
+		if (spew) { print("[%d]%sfindparagraph ended.\n",c,tabs); }
+		return c;
+	}
+	if (spew) { print("[%d]%sfindparagraph found nothing.\n",l,tabs); }
+	return l;
 }
 
 int findsrcblock (int l,int ind, string n) {
 	int64 stts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	print("[%d]%sfindsrcblock started...\n",l,tabs);
+	if (spew) { print("[%d]%sfindsrcblock started...\n",l,tabs); }
 	string ls = lines[l].strip();
 	string[] srcblock = {};
 	int b = l;
 	if (ls.has_prefix("#+BEGIN")) {
-		print("[%d]%sfound src header: %s\n",l,tabs,lines[l]);
+		if (spew) { print("[%d]%sfound src header: %s\n",l,tabs,lines[l]); }
 		for (b = l; b < lines.length; b++) {
 			srcblock += lines[b];
 			if (lines[b].strip().has_prefix("#+END")) {
-				print("[%d]%s\tcaptured source block\n",b,tabs);
+				if (spew) { print("[%d]%s\tcaptured source block\n",b,tabs); }
 				break;
 			}
 		}
 	}
 	if (srcblock.length > 2) {
 		string nwn = n;
-		if (n == "") { nwn =  "srcblock_%d".printf(typecount[2]); }
+		if (spew) { if (n == "") { nwn =  "srcblock_%d".printf(typecount[2]); } }
 		element ee = element();
 		ee.type = "srcblock";
 		ee.name = nwn;
 		ee.id = makemeahash(nwn,b);
 
 // turn src code into a local param
-		print("[%d]%s\tsrc block line count is %d\n",b,tabs,srcblock.length);
+		if (spew) { print("[%d]%s\tsrc block line count is %d\n",b,tabs,srcblock.length); }
 		string src = "";
 		for (int k = 1; k < (srcblock.length - 1); k++) {
 			src = src.concat(srcblock[k],"\n");
@@ -185,11 +219,11 @@ int findsrcblock (int l,int ind, string n) {
 		cc.name = nwn.concat("_code");
 		cc.value = src;
 		ee.params += cc;
-		print("[%d]%s\tsrc block code stored as parameter: %s\n",b,tabs,cc.name);
+		if (spew) { print("[%d]%s\tsrc block code stored as parameter: %s\n",b,tabs,cc.name); }
 
 // turn src type into local parameter
 		string[] hp = srcblock[0].split(":");
-		print("[%d]%s\tlooking for type: %s\n",b,tabs,hp[0]);
+		if (spew) { print("[%d]%s\tlooking for type: %s\n",b,tabs,hp[0]); }
 		string[] hpt = hp[0].split(" ");
 		if (hpt.length > 1) {
 			if (hpt[1] != null) { 
@@ -198,7 +232,7 @@ int findsrcblock (int l,int ind, string n) {
 					tt.name = "type";
 					tt.value = hpt[1];
 					ee.params += tt;
-					print("[%d]%s\t\tstored type parameter: %s\n",b,tabs,hpt[1]);
+					if (spew) { print("[%d]%s\t\tstored type parameter: %s\n",b,tabs,hpt[1]); }
 				}
 			}
 		}
@@ -206,7 +240,7 @@ int findsrcblock (int l,int ind, string n) {
 // get header args
 		for (int m = 1; m < hp.length; m++) {
 			bool notavar = false;
-			print("[%d]%s\tparsing header arg: %s\n",b,tabs,hp[m]);
+			if (spew) { print("[%d]%s\tparsing header arg: %s\n",b,tabs,hp[m]); }
 			if (hp[m].length > 3) {
 
 // turn vars into inputs, sources are checked in a post-process, as the source may not exist yet
@@ -251,7 +285,7 @@ int findsrcblock (int l,int ind, string n) {
 					}
 					for (int p = 0; p < hvars.length; p++) {
 						if (hvars[p] != null) {
-							print("[%d]%s\t\tvar pair: %s, %s\n",b,tabs,hvars[p],hvars[(p+1)]);
+							if (spew) { print("[%d]%s\t\tvar pair: %s, %s\n",b,tabs,hvars[p],hvars[(p+1)]); }
 							input ip = input();
 							ip.name = hvars[p];								// name
 							ip.id = makemeahash(ip.name, b);							// id, probably redundant
@@ -264,18 +298,18 @@ int findsrcblock (int l,int ind, string n) {
 					}
 				} else { notavar = true; }
 			}
-			print("[%d]%s\tdone checking header vars...\n",b,tabs);
+			if (spew) { print("[%d]%s\tdone checking header vars...\n",b,tabs); }
 
 // turn the other args into local params, check for enclosures
 			if (notavar && hp[m] != null) {
-				print("[%d]%s\tchecking header params...\n",b,tabs);
+				if (spew) { print("[%d]%s\tchecking header params...\n",b,tabs); }
 				if (hp[m].length > 2) {
 					string[] v = hp[m].split(" ");
 					string[] o = {};
 					for (int g = 0; g < v.length; g++) {
 						if (v[g] != null && v[g] != "") {
 							string s = v[g].strip();
-							print("[%d]%s\t\tchecking param part for enclosures: %s\n",b,tabs,s);
+							if (spew) { print("[%d]%s\t\tchecking param part for enclosures: %s\n",b,tabs,s); }
 							string c = s.substring(0,1);
 							string d = "\"({[\'";
 							if (d.contains(c)) {
@@ -286,18 +320,18 @@ int findsrcblock (int l,int ind, string n) {
 									if (c == "<") { c = ">"; }
 									int lidx = s.last_index_of(c) + 1;
 									string vl = s.substring(0,lidx);
-									print("[%d]%s\t\t\tenclosures found, capturing: %s\n",b,tabs,vl);
+									if (spew) { print("[%d]%s\t\t\tenclosures found, capturing: %s\n",b,tabs,vl); }
 									o += vl;
 								}
 							} else {
-								print("[%d]%s\t\t\tno enclosures found\n",b,tabs);
+								if (spew) { print("[%d]%s\t\t\tno enclosures found\n",b,tabs); }
 								o += s;
 							}
 						}
 					}
 					for (int p = 0; p < o.length; p++) {
 						if (o[p] != null) {
-							print("[%d]%s\t\tparam name val pair: %s, %s\n",b,tabs,o[p],o[(p+1)]);
+							if (spew) { print("[%d]%s\t\tparam name val pair: %s, %s\n",b,tabs,o[p],o[(p+1)]); }
 							param pp = param();
 							pp.name = o[p];			// name
 							pp.value = o[(p+1)];		// value - volatile
@@ -313,22 +347,22 @@ int findsrcblock (int l,int ind, string n) {
 		rr.name = nwn.concat("_result");
 		rr.id = makemeahash(rr.name,b);
 
-		print("[%d]%sfindsrcblock stored placeholder output: %s.\n",b,tabs,rr.name);
+		if (spew) { print("[%d]%sfindsrcblock stored placeholder output: %s.\n",b,tabs,rr.name); }
 
-		print("[%d]%ssearching for result...\n",b,tabs);
+		if (spew) { print("[%d]%ssearching for result...\n",b,tabs); }
 		string resblock = "";
 		bool amresult = false;
 		int c = (b + 1);
 		for (c = (b + 1); c < lines.length; c++) {
 			string cs = lines[c].strip();
-			print("[%d]%s\tlooking for result in: %s\n",c,tabs,lines[c]);
+			if (spew) { print("[%d]%s\tlooking for result in: %s\n",c,tabs,lines[c]); }
 	// skip newlines
 			if (cs != "") {
 				if (amresult) {
 					if (cs.has_prefix(": ")) { 
 						resblock = resblock.concat(lines[c],"\n");
 					} else { 
-						print("[%d]%s\t\treached end of results...\n",c,tabs);
+						if (spew) { print("[%d]%s\t\treached end of results...\n",c,tabs); }
 						break;
 					}
 				} else {
@@ -337,18 +371,18 @@ int findsrcblock (int l,int ind, string n) {
 						if (csp.length == 2) {
 							rr.name = csp[1];
 							rr.id = makemeahash(rr.name,c);
-							print("[%d]%s\t\tfound a capturing NAME, using it to name result: %s\n",c,tabs,cs);
+							if (spew) { print("[%d]%s\t\tfound a capturing NAME, using it to name result: %s\n",c,tabs,cs); }
 							continue;
 						} else {
-							print("[%d]%s\t\thit a non-capturing NAME: %s\n",c,tabs,cs);
+							if (spew) { print("[%d]%s\t\thit a non-capturing NAME: %s\n",c,tabs,cs); }
 							break;
 						}
 					}
 					if (cs.has_prefix("#+RESULTS:")) {
-						print("[%d]%s\t\tfound start of results block: %s\n",c,tabs,cs);
+						if (spew) { print("[%d]%s\t\tfound start of results block: %s\n",c,tabs,cs); }
 						amresult = true; continue;
 					} else {
-						print("[%d]%s\tsomething blocked the result: %s\n",c,tabs,cs);
+						if (spew) { print("[%d]%s\tsomething blocked the result: %s\n",c,tabs,cs); }
 						break;
 					}
 				}
@@ -359,13 +393,13 @@ int findsrcblock (int l,int ind, string n) {
 		ee.outputs += rr;
 		headings[thisheading].elements += ee;
 		typecount[2] += 1;
-		print("[%d]%sfindsrcblock ended.\n",c,tabs);
+		if (spew) { print("[%d]%sfindsrcblock ended.\n",c,tabs); }
 		int64 stte = GLib.get_real_time();
-		print("\nfind srcblock took %f microseconds\n\n",((double) (stte - stts)));
+		if (spew) { print("\nfind srcblock took %f microseconds\n\n",((double) (stte - stts)));}
 		return c;
 	}
 	int64 stte = GLib.get_real_time();
-	print("\nfind srcblock took %f microseconds\n\n",((double) (stte - stts)));
+	if (spew) { print("\nfind srcblock took %f microseconds\n\n",((double) (stte - stts)));}
 	return l;
 }
 void crosscheck () {
@@ -404,7 +438,7 @@ void crosscheck () {
 int findpropbin(int l, int ind) {
 	int64 ptts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	print("[%d]%sfindpropbin started...\n",l,tabs);
+	if (spew) { print("[%d]%sfindpropbin started...\n",l,tabs); }
 	string ls = lines[l].strip();
 	bool allgood = false;
 	if (ls == ":PROPERTIES:") {
@@ -425,9 +459,9 @@ int findpropbin(int l, int ind) {
 				if (lines[b].strip() == ":END:") { 
 					headings[thisheading].elements += pb;
 					typecount[1] += 1;
-					print("[%d]%sfindpropbin ended.\n",b,tabs);
+					if (spew) { print("[%d]%sfindpropbin ended.\n",b,tabs); }
 					int64 ptte = GLib.get_real_time();
-					print("\nfind propbin took %f microseconds\n\n",((double) (ptte - ptts)));
+					if (spew) { print("\nfind propbin took %f microseconds\n\n",((double) (ptte - ptts))); }
 					return b; 
 				}
 				string[] propparts = lines[b].split(":");
@@ -437,67 +471,66 @@ int findpropbin(int l, int ind) {
 					o.value = propparts[2].strip();
 					o.id = o.name.hash();
 					pb.outputs += o;
-					print("[%d]%s\tcaptured property: %s = %s\n",b,tabs,o.name,o.value);
+					if (spew) { print("[%d]%s\tcaptured property: %s = %s\n",b,tabs,o.name,o.value); }
 				}
 			}
 // don't collect the element if :END: isn't reached for some reason
 		}
 	}
 	int64 ptte = GLib.get_real_time();
-	print("\nfind propbin took %f microseconds\n\n",((double) (ptte - ptts)));
-	print("[%d]%sfindpropbin found nothng.\n",l,tabs);
+	if (spew) { print("\nfind propbin took %f microseconds\n\n",((double) (ptte - ptts))); }
+	if (spew) { print("[%d]%sfindpropbin found nothng.\n",l,tabs); }
 	return l;
 }
 int findheading (int l, int ind) {
 	int64 htts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	print("[%d]%sfindheading started...\n",l,tabs);
+	if (spew) {  print("[%d]%sfindheading started...\n",l,tabs); }
 	string ls = lines[l].strip();
-	//print("[%d]%s\tchecking line: %s\n",l,tabs,ls);
 	if (ls.has_prefix("*")) {
 		heading aa = heading();
-		print("[%d]%s\tcollecting indentation...\n",l,tabs);
+		if (spew) { print("[%d]%s\tcollecting indentation...\n",l,tabs); }
 		int c = 0;
 		aa.stars = 1;
 		while (ls.get_char(c) == '*') {
 			aa.stars = aa.stars + 1;
 			c += 1;
 		}
-		print("[%d]%s\t\tindetation level is %d\n",l,tabs,c);
+		if (spew) { print("[%d]%s\t\tindetation level is %d\n",l,tabs,c); }
 		ls = ls.replace("*","");
-		print("[%d]%s\tsearching for keywords and properties...\n",l,tabs);
+		if (spew) { print("[%d]%s\tsearching for keywords and properties...\n",l,tabs); }
 		int ts = ls.index_of("[");
 		int te = ls.last_index_of("]");
 		if (te > ts) {
 			string tpre = ls.substring(ts,te);
-			print("[%d]%s\t\tkeyword and priority: %s\n",l,tabs,tpre);
+			if (spew) { print("[%d]%s\t\tkeyword and priority: %s\n",l,tabs,tpre); }
 		}
-		print("[%d]%s\tsearching for tags...\n",l,tabs);
+		if (spew) { print("[%d]%s\tsearching for tags...\n",l,tabs); }
 		aa.name = ls;
 		aa.id = aa.name.hash();
 		headings += aa;
 		thisheading = (headings.length - 1);
-		print("[%d]%s\tfindheading captured a heading: %s.\n",l,tabs,ls);
-		print("[%d]%sfindheading ended.\n",(l + 1),tabs);
-		print("[%d] = %s\n",(l + 1),lines[(l + 1)]);
+		if (spew) { print("[%d]%s\tfindheading captured a heading: %s.\n",l,tabs,ls); }
+		if (spew) { print("[%d]%sfindheading ended.\n",(l + 1),tabs); }
+		if (spew) { print("[%d] = %s\n",(l + 1),lines[(l + 1)]); }
 		int64 htte = GLib.get_real_time();
-		print("\nfind headng took %f microseconds\n\n",((double) (htte - htts)));
+		if (spew) { print("\nfind headng took %f microseconds\n\n",((double) (htte - htts))); }
 		return (l + 1);
 	}
-	print("[%d]%sfindheading found nothng.\n",l,tabs);
+	if (spew) { print("[%d]%sfindheading found nothng.\n",l,tabs); }
 	int64 htte = GLib.get_real_time();
-	print("\nfind headng took %f microseconds\n\n",((double) (htte - htts)));
+	if (spew) { print("\nfind headng took %f microseconds\n\n",((double) (htte - htts))); }
 	return l;
 }
 int findname(int l, int ind) {
 	int64 ntts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	print("[%d]%sfindname started...\n",l,tabs);
+	if (spew) { print("[%d]%sfindname started...\n",l,tabs); }
 	string ls = lines[l].strip();
 	if (ls.has_prefix("#+NAME:")) {
 		string[] lsp = ls.split(" ");
 		if (lsp.length == 3) {
-			print("[%d]%s\tfound a #+NAME one-liner: var=%s, val=%s\n\n",l,tabs,lsp[1],lsp[2]);
+			if (spew) { print("[%d]%s\tfound a #+NAME one-liner: var=%s, val=%s\n\n",l,tabs,lsp[1],lsp[2]); }
 			element ee = element();
 			ee.name = "namevar_%s".printf(lsp[1]);
 			ee.id = ee.name.hash();
@@ -508,45 +541,46 @@ int findname(int l, int ind) {
 			oo.value = lsp[2];
 			ee.outputs += oo;
 			headings[thisheading].elements += ee;
-			print("[%d]%s\t\tfindname captured a namevar\n",l,tabs);
-			print("[%d]%sfindname ended.\n",(l + 1),tabs);
+			typecount[6] += 1;
+			if (spew) { print("[%d]%s\t\tfindname captured a namevar\n",l,tabs); }
+			if (spew) { print("[%d]%sfindname ended.\n",(l + 1),tabs); }
 			return (l + 1); 
 		}
 		if (lsp.length == 2) {
-			print("[%d]%s\tfound a capturing #+NAME: %s, looking for something to capture...\n",l,tabs,lsp[1]);
+			if (spew) { print("[%d]%s\tfound a capturing #+NAME: %s, looking for something to capture...\n",l,tabs,lsp[1]);}
 			for (int b = (l + 1); b < lines.length; b++) {
-				print("[%d] = %s\n",b,lines[b]);
+				if (spew) { print("[%d] = %s\n",b,lines[b]);}
 				if (lines[b] != "") {
 					string bs = lines[b].strip();
 					if (bs.has_prefix("#+BEGIN_SRC")) {
-						print("[%d]%s\t\tfound a src block to capture...\n",b,tabs);
+						if (spew) { print("[%d]%s\t\tfound a src block to capture...\n",b,tabs);}
 						int n = findsrcblock(b,(ind+16),lsp[1]);
 						return n;
 					}
 					if (bs.has_prefix("#+BEGIN_EXAMPLE")) {
-						print("[%d]%s\t\tfound an example block to capture...\n",b,tabs);
+						if (spew) { print("[%d]%s\t\tfound an example block to capture...\n",b,tabs);}
 						//int c = findxmpblock(b,(ind + 1));
 					}
 					if (bs.has_prefix("#+BEGIN_TABLE")) {
-						print("[%d]%s\t\tfound a table to capture...\n",b,tabs);
+						if (spew) { print("[%d]%s\t\tfound a table to capture...\n",b,tabs);}
 						//int c = findtable(b,(ind + 1));
 					}
-					print("[%d]%sfindname found nothing.\n",b,tabs);
+					if (spew) { print("[%d]%sfindname found nothing.\n",b,tabs);}
 					return b;
 				} else {
-					print("[%d]%s\t\tskipping empty line...\n",b,tabs);
+					if (spew) { print("[%d]%s\t\tskipping empty line...\n",b,tabs);}
 				}
 			}
 		}
 	}
-	print("[%d]%sfindname found nothing.\n",l,tabs);
+	if (spew) { print("[%d]%sfindname found nothing.\n",l,tabs);}
 	int64 ntte = GLib.get_real_time();
-	print("\nfind name took %f microseconds\n\n",((double) (ntte - ntts)));
+	if (spew) { print("\nfind name took %f microseconds\n\n",((double) (ntte - ntts)));}
 	return l;
 }
 int searchfortreasure (int l, int ind) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	print("[%d]%ssearchingfortreasure...\n",l,tabs);
+	if (spew) { print("[%d]%ssearchingfortreasure...\n",l,tabs);}
 	string ls = lines[l].strip();
 	ind += 4;
 	int n = l;
@@ -558,7 +592,7 @@ int searchfortreasure (int l, int ind) {
 		//l = findexmaple(l);
 		//l = findtable(l);
 		//l = findcommand(l);
-		//l = findparagraph(l);
+		n = findparagraph(n,ind);
 	}
 	if (n == l) { n += 1; }
 	return n;
@@ -566,9 +600,10 @@ int searchfortreasure (int l, int ind) {
 
 void main (string[] args) {
 	int64 ftts = GLib.get_real_time();
+	spew = false;
 	thisheading = -1;
 // load test file
-	print("loading testme.org...\n");
+	if (spew) { print("loading testme.org...\n");}
 	string ff = Path.build_filename ("./", "test.org");
 	File og = File.new_for_path(ff);
 	string sorg = "";
@@ -576,7 +611,7 @@ void main (string[] args) {
 		uint8[] c; string e;
 		og.load_contents (null, out c, out e);
 		sorg = (string) c;
-		print("\ttestme.org loaded.\n");
+		if (spew) { print("\ttestme.org loaded.\n"); }
 	} catch (Error e) {
 		print ("\tfailed to read %s: %s\n", og.get_path(), e.message);
 	}
@@ -593,36 +628,72 @@ void main (string[] args) {
 // typecount[3] = un-named example element count
 // typecount[4] = un-named table element count
 // typecount[5] = command element count
-		typecount = {0,0,0,0,0,0};
+// typecount[6] = nametags - not useful as they're already named, just counting them here
+		typecount = {0,0,0,0,0,0,0};
 		headingname = "";
 		string srcname = "";
 		string ls = "";
-		print("\nreading lines...\n");
+		if (spew) { print("\nreading lines...\n"); }
 		lines = sorg.split("\n");
 		int i = 0;
 		while (i < lines.length) {
-			print("[%d] = %s\n",i,lines[i]);
+			if (spew) { print("[%d] = %s\n",i,lines[i]); }
 			i = searchfortreasure(i,1);
 		}
 		int64 tts = GLib.get_real_time();
 		crosscheck();
 		int64 tte =  GLib.get_real_time();
-		print("\ncrosscheck took %f microseconds\n\n",((double) (tte - tts)));
-		foreach (heading h in headings) {
-			foreach (element e in h.elements) {
-				print("element: %s (%s)\n",e.name, e.type);
-				foreach (output o in e.outputs) {
-					print("\toutput.name: %s\n",o.name);
-				}
-				foreach (input u in e.inputs) {
-					print("\tinput: | %s | %u | %s |\n",u.name,u.source,u.value);
-				}
-				foreach (param p in e.params) {
-					print("\tparam %s: %s\n",p.name,p.value);
+		if (spew) { print("\ncrosscheck took %f microseconds\n\n",((double) (tte - tts))); }
+		if (spew) { 
+			foreach (heading h in headings) {
+				foreach (element e in h.elements) {
+					print("element: %s (%s)\n",e.name, e.type);
+					foreach (output o in e.outputs) {
+						print("\toutput.name: %s\n",o.name);
+					}
+					foreach (input u in e.inputs) {
+						print("\tinput: | %s | %u | %s |\n",u.name,u.source,u.value);
+					}
+					foreach (param p in e.params) {
+						print("\tparam %s: %s\n",p.name,p.value);
+					}
 				}
 			}
 		}
 	}
+	print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n",headings.length,typecount[5],typecount[1],typecount[2]);
+	int h = 0;
+	print("sample heading: headings[0]:\n");
+	print("\t%s\n",headings[h].name);
+	print("\t\t%s.id       = %u\n",headings[h].name,headings[h].id);
+	print("\t\t%s.stars    = %d\n",headings[h].name,headings[h].stars);
+	print("\t\t%s.params   = %d\n",headings[h].name,headings[h].params.length);
+	for (int p = 0; p < headings[0].params.length; p++) {
+		print("\t\t%s.params[%d].name  = %s\n",headings[h].name,p,headings[h].params[p].name);
+		print("\t\t%s.params[%d].value = %s\n",headings[h].name,p,headings[h].params[p].value);
+	}
+	print("\t\t%s.elements = %d\n",headings[h].name,headings[h].elements.length);
+	for (int e = 0; e < headings[h].elements.length; e++) {
+		print("\t\t\t%s.elements[%d].name    = %s\n",headings[h].name,e,headings[h].elements[e].name);
+		print("\t\t\t%s.elements[%d].id      = %u\n",headings[h].name,e,headings[h].elements[e].id);
+		print("\t\t\t%s.elements[%d].params  = %d\n",headings[h].name,e,headings[h].elements[e].params.length);
+		for (int p = 0; p < headings[h].elements[e].params.length; p++) {
+			print("\t\t\t\t%s.elements[%d].params[%d].name   = %s\n",headings[h].name,e,p,headings[h].elements[e].params[p].name);
+			print("\t\t\t\t%s.elements[%d].params[%d].value  = \n\t\t\t\t\t%s\n",headings[h].name,e,p,headings[h].elements[e].params[p].value.replace("\n","\n\t\t\t\t\t"));
+		}
+		print("\t\t\t%s.elements[%d].outputs = %d\n",headings[h].name,e,headings[h].elements[e].outputs.length);
+		for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
+			print("\t\t\t\t%s.elements[%d].outputs[%d].name  = %s\n",headings[h].name,e,o,headings[h].elements[e].outputs[o].name);
+			print("\t\t\t\t%s.elements[%d].outputs[%d].id    = %u\n",headings[h].name,e,o,headings[h].elements[e].outputs[o].id);
+			print("\t\t\t\t%s.elements[%d].outputs[%d].value = \n\t\t\t\t\t%s\n",headings[h].name,e,o,headings[h].elements[e].outputs[o].value.replace("\n","\n\t\t\t\t\t"));
+		}
+		print("\t\t\t%s.elements[%d].inputs = %d\n",headings[h].name,e,headings[h].elements[e].inputs.length);
+		for (int i = 0; i < headings[h].elements[e].inputs.length; i++) {
+			print("\t\t\t\t%s.elements[%d].inputs[%d].name   = %s\n",headings[h].name,e,i,headings[h].elements[e].inputs[i].name);
+			print("\t\t\t\t%s.elements[%d].inputs[%d].source = %u\n",headings[h].name,e,i,headings[h].elements[e].inputs[i].source);
+			print("\t\t\t\t%s.elements[%d].inputs[%d].value  = \n\t\t\t\t\t%s\n",headings[h].name,e,i,headings[h].elements[e].inputs[i].value.replace("\n","\n\t\t\t\t\t"));
+		}
+	}
 	int64 ftte = GLib.get_real_time();
-	print("\ntestparse.vale took %f seconds\n\n",((((double) (ftte - ftts)) / 1000000.0)));
+	print("\ntestparse.vala took %f seconds\n\n",((((double) (ftte - ftts)) / 1000000.0)));
 }
