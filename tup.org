@@ -1,0 +1,627 @@
+# -*- mode:org; org-confirm-babel-evaluate: nil; org-todo-keyword-faces: (("[0_TODO]" . "orange") ("[1_IP..]" . "yellow") ("[2_FIX.]" . "red") ("[3_WAIT]" . "blue") ("[4_NOPE]" . "black") ("[5_DONE]" . "green")); -*-
+#+STARTUP: indent overview align
+#+OPTIONS: toc:nil num:nil title:nil \n:t author:nil ::nil H:1 f:nil 
+#+TITLE: devlog
+#+AUTHOR: the untitled program
+#+TODO: [0_TODO] [1_IP..] [2_FIX.] [3_WAIT] [4_NOPE] [5_DONE]
+#+SUBTITLE: nope still got nothing for the name
+#+NOTHING: goes here
+* deliverables
+** [5_DONE] datastructure
+*** [5_DONE] spec
+- heading
+  - id uint
+  - stars int
+  - todo uint
+  - tags uint[]
+  - template string
+  - params param[]
+    - param
+      - name string
+      - value string
+  - elements element[]
+    - element
+      - name string
+      - id uint
+      - type string
+      - params param[]
+        - param
+          - name string
+          - value string
+      - inputs input[]
+        - input
+          - name string
+          - id uint
+          - source uint
+          - value string
+          - defaultv string
+          - org string
+      - outputs output[]
+        - output 
+          - name string
+          - id uint
+          - value string
+  - nutsack string
+- todo
+  - name string
+  - id uint
+  - color int
+- priority
+  - name string
+  - id uint
+  - color int
+- tag
+  - name string
+  - id uint
+  - color int
+*** [5_DONE] work
+**** [5_DONE] heading
+#+BEGIN_EXAMPLE
+struct heading {
+	string			name;			// can be whatever
+	uint			id;			// hash of name + iterator + time
+	int			stars;			// indentation
+	uint			priority;		// id of priority, one per heading
+	uint			todo;			// id of todo, one per heading
+	uint[]			tags;			// id[] of tags, many per heading
+	uint			template;		// internal use only: template id
+	param[]		params;		// internal use only: fold, visible, positions
+	element[]		elements;		// elements under this heading, might be broken out into flat lists later
+	string			nutsack;		// misc stuff found under the headigng that wasn't captured as elements 
+#+END_EXAMPLE
+**** [5_DONE] element
+#+BEGIN_EXAMPLE
+struct element {
+	string			name;			// can be whatever, but try to autoname to be unique
+	uint			id;			// hash of name + iterator + time
+	string			type;			// used for ui, writing back to org
+	input[]		inputs;		// can take input wires
+	output[]		outputs;		// can be wired out
+	param[]		params;		// local params; no wiring
+}
+#+END_EXAMPLE
+**** [5_DONE] param
+#+BEGIN_EXAMPLE
+struct param {
+	string name;
+	uint id;
+	string value;
+}
+#+END_EXAMPLE
+**** [5_DONE] input
+#+BEGIN_EXAMPLE
+struct input {
+	uint id;
+	string name;
+	uint source;
+	string value;
+	string defaultv;
+	string org;
+}
+#+END_EXAMPLE
+**** [5_DONE] output
+#+BEGIN_EXAMPLE
+struct output {
+	uint id;
+	string name;
+	string value;
+}
+#+END_EXAMPLE
+**** [5_DONE] todo
+#+BEGIN_EXAMPLE
+struct todo {
+	string			name;			// todo string, must be unique
+	uint			id;			// hash of todo
+	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
+}
+#+END_EXAMPLE
+**** [5_DONE] tag
+#+BEGIN_EXAMPLE
+struct tag {
+	string			name;			// tag string, must be unique
+	uint			id;			// hash of tag
+	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
+}
+#+END_EXAMPLE
+**** [5_DONE] priority
+#+BEGIN_EXAMPLE
+struct priority {
+	string			name;			// priority string, must be unique
+	uint			id;			// hash of priority
+	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
+}
+#+END_EXAMPLE
+** [1_IP..] loadmemyorg.vala
+*** spec
+- convert org into datastructure
+- link linked inputs and outputs
+- correctly load taxbacklog.org under 1s
+- make commandline test functions (as args) to:
+  - check for hash conflicts
+  - check and correct hash conflicts
+  - examine contents of any heading(s) by name
+  - examine contents of any heading by index
+  - examine contents of any heading by id
+  - query value of any item by its id
+  - query value of any item by its path
+  - query value of any linked item via its link
+  - change value of any struct parameter via its id
+  - change value of any struct parameter via its path
+  - change value of any linked struct parameter via its link
+  - add struct to any list via path
+  - remove struct via its id
+  - remove struct via its path
+  - remove linked struct via its link
+  - unlink linked struct via its link
+  - unlink linked struct via its id
+  - unlink linked struct via its path
+  - sort listed structs by name
+  - sort listed structs by value
+  - move listed struct up by 1
+  - move listed struct down by 1
+  - correclty rename struct name that requires a unique name
+  - evaluate a srcblock element, respecting all element params
+  - correctly evaluate a srcblock and all upstream elements collecting and reversing, eg::
+#+BEGIN_SRC vala
+struct node {
+	string	name;
+	uint	id;
+	uint[]	input;
+}
+node[] nodes;
+void main (string[] args) {
+node aa = node();
+node bb = node();
+node cc = node();
+node dd = node();
+aa.name = "aa";
+aa.id = 1;
+bb.name = "bb";
+bb.id = 2;
+cc.name = "cc";
+cc.id = 3;
+dd.name = "dd";
+dd.id = 4;
+cc.input += dd.id;
+cc.input += aa.id;
+dd.input += bb.id;
+dd.input += aa.id;
+bb.input += aa.id;
+nodes += aa;
+nodes += bb;
+nodes += cc;
+nodes += dd;
+
+// aa -> bb -> dd -> cc
+// aa -------------> cc
+// aa -------> dd
+
+//   00 01 02 | a  | b  | for (int i = a.length - 1; i >= 0; i--) {
+// 0 aa       | aa | aa |    for (int q = 0; q < b.length; q++) {
+// 0 dd       | dd | bb |        if (b[q] == a[i]) { allgood = false; break; }
+// 1    bb    | bb | dd |    }
+// 1    aa    | aa |    |    if (allgood) { b += a[i]; }
+// 2       aa | aa |    | }
+//
+// = aa -> bb -> dd -> cc
+// = 1  -> 2  -> 4
+
+uint[] sl = {};
+uint[] ul = {};
+uint[] nn = nodes[2].input;
+bool allgood = true;
+
+print("cc.input[0] = %u, cc.input[1] = %u\n",nn[0],nn[1]);
+int r = 0;
+while (r < nn.length) {
+	for (int f = 0; f < nn.length; f++) {
+		for (int n = 0; n < nodes.length; n++) {
+// if node in nn
+			if (nodes[n].id == nn[f]) {
+				for(int i = 0; i < nodes[n].input.length; i++) {
+					nn += nodes[n].input[i];
+				}
+			}
+		}
+		r += 1;
+	}
+	if (r > 10) { break; }
+}
+uint[] ee = {};
+for (int n = (nn.length - 1); n >= 0; n--) {
+	allgood = true;
+	for (int e = 0; e < ee.length; e++) {
+		if (ee[e] == nn[n]) { allgood = false; break; }
+	}
+	if (allgood) { ee += nn[n]; }
+}
+for (int j = 0; j < ee.length; j++) { print("ee[%d] = %u\n",j,ee[j]); }
+}
+#+END_SRC
+
+#+RESULTS:
+: Compilation succeeded - 2 warning(s)
+: cc.input[0] = 4, cc.input[1] = 1
+: ee[0] = 1
+: ee[1] = 2
+: ee[2] = 4
+
+*** work
+** [0_TODO] makememyorg.vala
+** [1_IP..] applicationwindow.vala
+** [3_WAIT] outlinerpane.vala
+** [3_WAIT] parameterpane.vala
+*** spec
+- gtk4 parameters
+- gthsourceview code editors
+- gtksourceview result editors
+- elements are collapsible
+- elements can be re-ordered via drag'n'drop or control-strip button
+- parameter pane has a control strip for : add, remove, up, down
+- adding will invoke a popover of element types:
+#+BEGIN_SRC ditaa
+    +-------------------------+
+    | +---------------------+ |
+    | | nametag             | |
+    | +---------------------+ |
+    | | property drawer     | |
+    | +---------------------+ |
+    | | src block           | |
+    | +---------------------+ |
+    | | paragraph           | |
+    | +---------------------+ |
+    | | table               | |
+    | +---------------------+ |
+    | | example             | |
+    | +---------------------+ |
+    |  search                 |
+    | +---------------------+ |
+    | |                     | |
+    | +---------------------+ |
+    +----------+  +-----------+
+                \/
+#+END_SRC
+- new element templates will appear in the above list, below default entries, hence search field
+- search field will grep the list
+- elements can be saved as templates via template parameters at the bottom of each element, except nametag
+
+element examples:
+
+srcblock
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | mycode             |   this element's name
+    +--------+--------------------+
+    | type   | [ rebol3   ][▾]    |   src type
+    +--------|--------------------+
+    | enable | [X] on             |   toggle to skip this element on eval, may disable downstream dependents
+    +--------+--------------------+
+    | freeze | [ ] off            |   toggle to pass-on cached result, block upstream eval
+    +--------+--------------------+
+    | silent | [ ] off            |   toggle to not populate the result on eval
+    +--------+--------------------+
+    | params          [+][-][▾][▴]|   src header params, add remove re-order
+    +---------+-------------------+
+    | tangle  | ./test.r3         |   
+    +---------+-------------------+   = :tangle "./test.r3" :results output
+    | results | output            |   
+    +---------+-------------------+
+    | inputs          [+][-][▾][▴]|   src header :var list, add remove re-order
+    +--------+--------------------+
+   [| x      | MYVAL (13.0)       |   
+    +--------+--------------------+   = :var x=myval y=aa_result
+   [| y      | aa_result (22.0)   |   
+    +--------+--------------------+   
+    | value                    [+]|   src code, technically a parameter, but separated in the UI for clarity
+    +-----------------------------+   has toggle to expand to fill parameter pane
+    | 1 | REBOL[]                 |   
+    | 2 | prin [ x + y ]          |   
+    | 3 | print " of 100.0"       |   
+    +---+----+--------------------+  
+    | preset | [▴][ filename ][▾] |   save/load code from file
+    +--------+--------------------+ 
+    | mycode_result            [-]|]  evaluation result
+    +-----------------------------+
+    | 35.0 of 100.0               |   collapsable result, editable, but volatile unless 'silent' is on 
+    |                             |
+    +----------+------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+name tag:
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | myname             | 
+    +--------+--------------------+   #+NAME: myname "my string val"
+    | "Ranod Wakl"                |]  
+    +-----------------------------+
+#+END_SRC
+property bin
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | propertybin_0      |   auto named, since properties aren't named in org
+    +--------+--------------------+
+    | outputs         [+][-][▾][▴]|   src header params, add remove re-order
+    +---------+-------------------+
+    | MYVAL   | 13.0              |]   
+    +---------+-------------------+   :MYVAL: 13.0
+    | DATE    | <2023-04-31>      |]  :DATE:  <2023-10-31>
+    +---------++------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+paragraph:
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | paragraph_0        |   auto named
+    +--------+--------------------+
+    | value                       |]  value is technically an output, but is not
+    +-----------------------------+   contained in an output list for clarity
+    | some text                   |
+    | - goes                      |
+    | here                        |
+    +----------+------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+paragraph, with vars:
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | paragraph_0        |   auto name, as paragraph has no name in org
+    +--------+--------------------+
+    | inputs                      |   no input controls, as they are auto-detected
+    +-----------------------------+
+   [| myname                      |   
+    +-----------------------------+   var values aren't shown for val:var link inputs
+   [| mycode_result               |
+    +-----------------------------+ 
+    | value                       |]  value is technically an output, but is not
+    +-----------------------------+   contained in an output list for clarity
+    | dear [[val:myname]],        |
+    | here are your results:      |
+    | [[val:cc_src_result]]       |
+    |                             |   inputs are created & linked when val:var links are typed
+    | goodluck!                   |   inputs are destroyed when val:var links are deleted
+    | -cpb                        |   or malformed
+    +----------+------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+example:
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | my example         |   user named, inserts a capturing nametag
+    +--------+--------------------+
+    | value                       |]  value is technically an output, but is not
+    +-----------------------------+   contained in an output list for clarity
+    | * orgception                |
+    | ** will it break :org:      |   val/var links are not detected in examples, everything is verbatim
+    |    - who the hell knows     |
+    +----------+------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+table:
+#+BEGIN_SRC ditaa
+    +--------+--------------------+
+    | name   | my table           |   user named, inserts a capturing nametag
+    +--------+--------------------+
+   [| xf                          |   var values aren't shown for refs in '(varname)  
+    +-----------------------------+ 
+    | value                       |]  value is technically an output, but is not
+    +-----------------------------+   contained in an output list for clarity
+    | ITEM   | QTY | PRC  | SUB   |   table val is sent as semi-colon csv string
+    +--------+-----+------+-------+
+    | word   |  5  | 18.0 | 90.0  |
+    | thing  |  3  | 23.0 | 69.0  |
+    | action |  2  | 45.0 | 90.0  |   gtk list view with columns
+    | idea   |  1  | 88.0 | 88.0  | 
+    +--------+-----+------+-------+
+    | total  |     |      | 337.0 |
+    +--------+-----+------+-------+
+   [| formula                     |]  formula are duplicated to input and output, but shown as one parameter
+    +-----------------------------+   they are named as tablename_formula
+    | $4=($2*$3);%.1f             |
+    | @>$4=vsum(@I$4..@II$4);%.1f |   lines of formulae are joined with '::' when writing back to org
+    +--------+-+------------------+
+    | template | [▴][ name   ][▾] |   save/load element template, includes all inputs, outputs, params, vals, names, etc.
+    +----------+------------------+ 
+#+END_SRC
+** [3_WAIT] nodegraph.vala
+*** spec
+- graph show headings only
+- node linkage follows hierarchy
+- node layout follows hierarchy
+- node layout tries to fill available space using a y then x stacking function
+#+BEGIN_SRC ditaa
+  +------------------------------+------------+
+  |  graph                       | native org |
+  +------------------------------+------------+
+  |  +--------------+            | * one      |
+  |  |      one     |            | ** two     |
+  |  +--------------+            | *** three  |
+  |          |                   | *** four   |
+  |  +--------------+            | * five     |
+  |  |      two     |            |            |
+  |  +--------------+            |            |
+  |       /       \              |            |
+  |  +-------+  +--------+       |            |
+  |  | three |  |  four  |       |            |
+  |  +-------+  +--------+       |            |
+  |  +-------------+             |            |
+  |  |    five     |             |            |
+  |  +-------------+             |            |
+  +------------------------------+------------+
+#+END_SRC
+*** work
+** [3_WAIT] processgraph.vala
+*** spec
+- graph shows elements only
+- element outputs rendered with output port
+- element inputs rendered with input port
+- layout with x then y stacking function
+- movable nodes, wires update
+- click port to lock end of wire to mouse
+- long press gesture on port to lock wire to finger
+- click locked wire on another port to attatch
+- tap gesture locked wire on another port to attach
+- click lockded wire on bg to disconnect
+- tap gesture on bg to disconnect locked wire
+- r-click locked wire anywhere to restore wire
+- long press anywhere to restore locked wire
+- prevent input->input, output->output links
+- kiss input/output ports to link
+- shake node to break all connections
+- re-wire parent & ancestor of shook nodes if there are matching pairs of connections
+- click drag node to move it
+- one finger gesture drag node to move it
+- double click node to frame node
+- double tap gesture on node to frame node
+- double click wire to frame attached nodes
+- right click node to invoke delete? popover
+- long-press node to invoke delete? popover 
+- double tap gesture on wire to frame attached nodes 
+- click drag wire to move attached nodes
+- one finger gesture drag on wire to move attached nodes
+- right click wire to invoke delete? popover
+- long-press wire to invoke delete? popover 
+- double click bg to frame all
+- double tap gesture on bg to frame all
+- middle click drag bg to pan
+- one finger gesture on bg to pan
+- right click drag bg to zoom
+- two finger gesture on bg to zoom
+- left click drag to box select
+- long-press on bg to begin box select, then drag to scale box, then double-tap to select
+- fonts scale with graph
+- smooth scaling fonts, no jumping between font sizes
+- ports attempt to maintain their size, within the y height of the node:
+#+BEGIN_SRC ditaa
+  +-------------------------+-------------------+------------------+
+  | zoom in                 | zoom out          | all the way out  |
+  +-------------------------+-------------------+------------------+
+  |                         |                   |                  |
+  |                         |                   |                  |
+  |      +------------+     |      ┌┬─────┐     |                  |
+  |     [| input      |     |      ├┼─────┼┐    |      ⊟⊟⊡         |
+  |      +------------+     |      └┴─────┴┘    |                  |
+  |     [| input      |     |                   |                  |
+  |      +------------+     |                   |                  |
+  |      | output     |]    |                   |                  |
+  |      +------------+     |                   |                  |
+  |                         |                   |                  |
+  +-------------------------+-------------------+------------------+
+#+END_SRC
+- option to float node names (element.name), keep scale until it hits the bounds of another name, then scale.
+#+BEGIN_SRC ditaa
+  +-------------------------+-------------------+------------------+
+  | zoom in                 | zoom out          | all the way out  |
+  +-------------------------+-------------------+------------------+
+  |                         |                   |                  |
+  |      My Node            |      My Node      |                  |
+  |      +------------+     |      ┌┬─────┐     |      My Node     |
+  |     [| input      |     |      ├┼─────┼┐    |      ⊟⊟⊡         |
+  |      +------------+     |      └┴─────┴┘    |                  |
+  |     [| input      |     |                   |                  |
+  |      +------------+     |                   |                  |
+  |      | output     |]    |                   |                  |
+  |      +------------+     |                   |                  |
+  |                         |                   |                  |
+  +-------------------------+-------------------+------------------+
+#+END_SRC
+sample graph and generating org source:
+#+BEGIN_SRC ditaa
+  +--------------------------------------------------------------+----------------------------------------------------------+
+  | graph                                                        | native org                                               |
+  +--------------------------------------------------------------+----------------------------------------------------------+
+  |  +-------------+     +-----------+                           | * one                                                    |
+  |  | one:prop    |     | three:src |                           |   :PROPERTIES:                                           |
+  |  +-------------+     +===========+     +-----------------+   |   :ONE: 1                                                |
+  |  | ONE         |]-->[| x | ONE   |     | two:paragraph   |   |   :END:                                                  |
+  |  +-------------+     +===========+     +--------+--------+   | ** two                                                   |
+  |                      | result    |]-->[| result | val    |   |    some text                                             |
+  |                      +-----------+     +--------+--------+   |    [[val:result]]                                        |
+  |                                        | text            |]  |    more text                                             |
+  |                                        +-----------------+   | *** three                                                |
+  |                                                              |     #+BEGIN_SRC rebol3 :var x=(org-entry-get nil "ONE")  |
+  |                                                              |     REBOL[]                                              |
+  |                                                              |     probe x                                              |
+  |                                                              |     #+END_SRC                                            |
+  |                                                              |     #+NAME: result                                       |
+  |                                                              |     #+RESULT:                                            |
+  |                                                              |     1                                                    |
+  +--------------------------------------------------------------+----------------------------------------------------------+
+#+END_SRC
+parameters, inputs and outputs:
+#+BEGIN_SRC ditaa :file graph_param_spec.png :cmdline -E -s 0.8 :results none
+ +--------------------------+---------------+-----------------------------------------------+
+ | org                      | struct type   | graph                                         |
+ +--------------------------+---------------+-----------------------------------------------+
+ |                          |               |  +----+------+                                |
+ |       (#+NAME:) x 12.0   | output        |  | x  | 12.0 |]---> 12.0                      |
+ |                          |               |  +----+------+                                |
+ |                          |               |          +----+--------+                      |
+ |               :var q=x   | input         |   x --->[| q  | (12.0) |                      |
+ |                          |               |          +----+--------+                      |
+ |                          |               |   +----+-------+                              |
+ |             :var q=4.0   | input         |  [| q  | 4.0   |                              |
+ |                          |               |   +----+-------+                              |
+ |                          |               |  +------------+--------+                      |
+ |    :MYPROPERTY: myname   | output        |  | MYPROPERTY | myname |]---> "myname"        |
+ |                          |               |  +------------+--------+                      |
+ +--------------------------+---------------+-----------------------------------------------+
+ | complex example, NAME captures the next block, which captures the result                 |
+ | along with its name. A NAME before RESULTS will rename it.                               |
+ +--------------------------+---------------+-----------------------------------------------+
+ | #+NAME: mysrc            |               |         +--------------+                      |
+ | #+BEGIN_SRC :var q=x     | param         |         | mysrc        |                      |
+ | 33.0 + q                 |               |         +----+---------+                      |
+ | #+END_SRC                | input         |  x --->[| q  | (12.0)  |                      |
+ | #+NAME: r                |               |         +----+---------+                      |
+ | #+RESULTS: mysrc         | param         |         | 33.0 + q     |                      |
+ | : 45.0                   |               |         +----+---------+                      |
+ |                          | output        |         | r  | (45.5)  |]---> r               |
+ |                          |               |         +----+---------+                      |
+ +--------------------------+---------------+-----------------------------------------------+
+ | variant of the above, but without NAMEs                                                  |
+ | auto-generated names will get backwashed into the orgfile to provide output vars         |
+ | even if they aren't used                                                                 |
+ +--------------------------+---------------+-----------------------------------------------+
+ | #+BEGIN_SRC :var q=x     |               |         +-----------------------+             |
+ | 33.0 + x                 | param         |         | src1                  |             |
+ | #+END_SRC                |               |         +----+------------------+             |
+ | #+RESULTS:               | input         |  x --->[| q  | (12.0)           |             |
+ | : 45.0                   |               |         +----+------------------+             |
+ |                          | param         |         | 33.0 + q              |             |
+ |                          |               |         +-------------+---------+             |
+ |                          | output        |         | src1_result | (45.5)  |]---> r      |
+ |                          |               |         +-------------+---------+             |
+ +--------------------------+---------------+-----------------------------------------------+
+#+END_SRC
+*** work
+** [3_WAIT] timeline.vala
+*** spec
+#+BEGIN_SRC ditaa :file timeline_spec.png :results none
+  +-------------------------------------------------+------------------------------------------+
+  | timeline                                        | native org                               |
+  +-------------------------------------------------+------------------------------------------+
+  |----------+   :    :    +-------------------+    | * one                                    |
+  |  one     |   :    :    |      three        |    |   SCHEDULED: <2023-10-16>--<2023-10-24>  |
+  |----------+   :    :    +-------------------+    | ** two                                   |
+  |    :    +------------------+     :    +----+    |    ~<2023-10-25>--<2023-10-28>~          |
+  |    :    |       two        |     :    | t. |    |    DUE: <2023-10-31>                     |
+  |    :    +------------------+     :    +----+    | *** three                                |
+  +-------------------------------------------------+     :PROPERTIES:                         |
+  | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 01 |     :WHEN: <2023-10-28>--<2023-10-31>    |
+  +-------------------------------------------------+     :END:                                |
+  |               october                      | n. |                                          |
+  +-------------------------------------------------+------------------------------------------+
+#+END_SRC
+
+** [3_WAIT] calendar.vala
+** [3_WAIT] icons
+** [1_IP..] documentation
+** [3_WAIT] website
