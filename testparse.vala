@@ -55,16 +55,19 @@ struct todo {
 	string			name;			// todo string, must be unique
 	uint			id;			// hash of todo
 	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
 }
 struct priority {
 	string			name;			// priority string, must be unique
 	uint			id;			// hash of priority
 	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
 }
 struct tag {
 	string			name;			// tag string, must be unique
 	uint			id;			// hash of tag
 	int			color;			// hex color for rendering
+	uint[]			headings;		// list of heading ids
 }
 // stuff that multiple headings use = their ids
 // stuff that uses one heading..... = nested struct under heading
@@ -117,6 +120,71 @@ int imod (int l, int r) {
 uint makemeahash(string n, int t) {
 	DateTime dd = new DateTime.now_local();
 	return "%s_%d%d%d%d%d%d%d".printf(n,t,dd.get_year(),dd.get_month(),dd.get_day_of_month(),dd.get_hour(),dd.get_minute(),dd.get_microsecond()).hash();
+}
+/* TODO:
+uint[] evalpath (uint[] nn, uint me) {
+	bool allgood = true;
+	int r = 0;
+	while (r < nn.length) {
+		for (int f = 0; f < nn.length; f++) {
+			for (int h = 0; h < headings.length; n++) {
+				if (nodes[n].id == nn[f]) {
+					for(int i = 0; i < nodes[n].input.length; i++) {
+						nn += nodes[n].input[i];
+					}
+				}
+			}
+			r += 1;
+		}
+		if (r > 10) { break; }
+	}
+	uint[] ee = {};
+	for (int n = (nn.length - 1); n >= 0; n--) {
+		allgood = true;
+		for (int e = 0; e < ee.length; e++) {
+			if (ee[e] == nn[n]) { allgood = false; break; }
+		}
+		if (allgood) { ee += nn[n]; }
+	}
+	for (int j = 0; j < ee.length; j++) { print("ee[%d] = %u\n",j,ee[j]); }
+	return ee;
+}
+*/
+
+int findexample (int l, int ind) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("[%d]%sfindexample started...\n",l,tabs); }
+	string txtname = "example_%d".printf(typecount[3]);
+	string[] txt = {};
+	bool amexample = false;
+	int c = 0;
+	for (c = l; c < lines.length; c++) {
+		string cs = lines[c].strip();
+		if (amexample) {
+			if (cs.has_prefix("#+END_EXAMPLE")) { break; }
+			if (spew) { print("[%d]%s\t verbatim text: %s\n",c,tabs,lines[c]); }
+			txt += lines[c];
+		} else {
+			if (cs.has_prefix("#+BEGIN_EXAMPLE")) { amexample = true; continue; }
+		}
+	}
+	if (txt.length > 0) {
+		if (spew) { print("[%d]%s\tverbatim was collected, checking it...\n",c,tabs); }
+		if (n != "") { txtname = n; }
+		element ee = element();
+		ee.name = txtname;
+		ee.id = makemeahash(ee.name,c);
+		param pp = param();
+		pp.name = ee.name.concat("_example");
+		pp.value = string.joinv("\n",txt);
+		ee.params += pp;
+		headings[thisheading].elements += ee;
+		if (spew) { print("[%d]%s\tsuccessfully captured verbatim text\n",c,tabs); }
+		if (spew) { print("[%d]%sfindexample ended.\n",c,tabs); }
+		return c;
+	}
+	if (spew) { print("[%d]%sfindexample found nothing.\n",l,tabs); }
+	return l;
 }
 
 int findparagraph (int l, int ind) {
@@ -403,6 +471,7 @@ int findsrcblock (int l,int ind, string n) {
 	return l;
 }
 void crosscheck () {
+	int64 ctts = GLib.get_real_time();
 	if (headings.length > 0) {
 		foreach (unowned heading? h in headings){
 			if (h.elements.length > 0) {
@@ -433,6 +502,8 @@ void crosscheck () {
 			}
 		}
 	}
+	int64 ctte = GLib.get_real_time();
+	print("\ncrosscheck took %f microseconds\n\n",((double) (ctte - ctts)));
 }
 
 int findpropbin(int l, int ind) {
@@ -559,7 +630,8 @@ int findname(int l, int ind) {
 					}
 					if (bs.has_prefix("#+BEGIN_EXAMPLE")) {
 						if (spew) { print("[%d]%s\t\tfound an example block to capture...\n",b,tabs);}
-						//int c = findxmpblock(b,(ind + 1));
+						int n = findexample(b,(ind+16),lsp[1]);
+						return n;
 					}
 					if (bs.has_prefix("#+BEGIN_TABLE")) {
 						if (spew) { print("[%d]%s\t\tfound a table to capture...\n",b,tabs);}
