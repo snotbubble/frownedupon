@@ -273,7 +273,8 @@ int findexample (int l, int ind, string n) {
 	int64 xtts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	if (spew) { print("[%d]%sfindexample started...\n",l,tabs); }
-	string txtname = "example_%d".printf(typecount[3]);
+	string txtname = "";
+	if (n == "") { txtname =  "example_%d".printf(typecount[3]); }  // examples can be named
 	string[] txt = {};
 	bool amexample = false;
 	int c = 0;
@@ -316,6 +317,7 @@ int findparagraph (int l, int ind) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	if (spew) { print("[%d]%sfindparagraph started...\n",l,tabs); }
 	string txtname = "paragraph_%d".printf(typecount[0]);
+	//if (n == "") { txtname =  "srcblock_%d".printf(typecount[2]); }  // don't NAME paragraphs
 	string[] txt = {};
 	int c = 0;
 	for (c = l; c < lines.length; c++) {
@@ -382,6 +384,150 @@ int findparagraph (int l, int ind) {
 	return l;
 }
 
+int findtable (int l, int ind, string n) {
+	int64 ttts = GLib.get_real_time();
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	bool dospew = true;
+	if (dospew) { print("[%d]%sfindtable started...\n",l,tabs); }
+	string tablename = "";
+	if (n == "") { tablename =  "table_%d".printf(typecount[4]); }   // can NAME tables
+	string ls = lines[l].strip();
+	if (ls.has_prefix("#+BEGIN_TABLE")) {
+		if (dospew) { print("[%d]%s\tfindtable found table header: %s\n",l,tabs,ls); }
+		int t = (l + 1);
+		int rc = 0;
+		int cc = 0;
+		int tln = 0;
+		string[] lsp = {};
+		ls = lines[t].strip();
+
+// skip blanks
+		while (ls == "") {
+			if (t == lines.length) { break; } 
+			t += 1; 
+			ls = lines[t].strip(); 
+		}
+
+// get column count
+		if (dospew) { print("[%d]%s\t\tfindtable looking for table in: %s\n",l,tabs,ls); }
+		if (ls.has_prefix("|")) {
+			lsp = ls.split("|");
+			if (lsp[(lsp.length - 1)].strip() == "") {
+				cc = (lsp.length - 2);
+				tln = t;
+			}
+		}
+		if (cc > 0) {
+			if (dospew) { print("[%d]%s\t\tfindtable counted %d columns\n",l,tabs,cc); }
+			bool amtable = false;
+			for (t = (l + 1); t < lines.length; t++) {
+				ls = lines[t].strip();
+				if (amtable && ls == "") { break; }
+				if (amtable == false && ls == "") { continue; }
+				if (ls.has_prefix("|")) {
+					lsp = ls.split("|");
+					if (lsp[(lsp.length - 1)].strip() == "") {
+						rc += 1; amtable = true;
+					}
+				} else { break; }
+			}
+			if (dospew) { print("[%d]%s\t\tfindtable counted %d rows\n",t,tabs,rc); }
+			if (rc > 0 && tln > 0) {
+				string[,] matx = new string[rc,cc];
+				int r = 0;
+				for(t = tln; t < (tln + rc); t++) {
+					ls = lines[t].strip();
+					lsp = ls.split("|");
+					if ((lsp.length - 2) != cc) {
+
+// probably hit a hline...
+						string[] dsp = ls.replace("|","").split("+");
+						if (dospew) { print("[%d]%s\t\tfindtable comparing hline segs (%d) with columns (%d)\n",t,tabs,dsp.length,cc); }
+						if (dsp[0][0] == '-' && dsp.length == cc) {
+							if (dospew) { print("[%d]%s\t\tfindtable encountered a hline: %s\n",t,tabs,ls); }
+							lsp = {""};
+							for (int d = 0; d < dsp.length; d++) {
+								lsp += dsp[d];
+							}
+							lsp += "";
+							
+							for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c].strip(); }
+						} else {
+							if (dospew) { print("[%d]%s\t\tfindtable encountered a malformed table row: %s\n",t,tabs,dsp[0]); }
+							if (dospew) { print("[%d]%sfindtable aborted.\n",t,tabs); }
+							return t;
+						}
+					} else {
+						for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c].strip(); }
+					}
+					r += 1;
+				}
+				string csv = "";
+				for (int i = 0; i < rc; i++) {
+					for (int q = 0; q < cc; q++) {
+						csv = csv.concat(matx[i,q],";");
+					}
+					csv = csv.concat("\n");
+				}
+				if (dospew) { print("[%d]%s\t\tfindtable comparing t (%d) with (tln + rc) (%d)\n",t,tabs,t,(tln + rc)); }
+				if (dospew) { print("[%d]%s\t\tfindtable looking for formulae...\n",t,tabs); }
+				string[] themaths = {};
+				string[] themathvars = {};
+				int f = 0;
+				for (f = t; f < lines.length; f++) {
+					ls = lines[f].strip();
+					if (ls.has_prefix("#+TBLFM:") == false && ls != "") { break; }
+					if (ls.has_prefix("#+TBLFM:")) {
+						ls = ls.replace("#+TBLFM:","");
+						lsp = ls.split("::");
+						for (int m = 0; m < lsp.length; m++) {
+							if (notinstringarray(lsp[m].strip(),themaths)) {
+								if (dospew) { print("[%d]%s\t\t\tfindtable found formula: %s\n",f,tabs,lsp[m].strip()); }
+								themaths += lsp[m].strip();
+								string[] mp = lsp[m].strip().split("=");
+								if (mp.length > 1) {
+									int ms = mp[1].index_of("\'(") + 2;
+									
+									string mc = mp[1].substring(ms,(mp[1].length - ms));
+									int me = mc.index_of(")");
+									mc = mc.substring(0,me);
+									if (dospew) { print("[%d]%s\t\t\t\tfindtable found variable in formula: %s\n",f,tabs,mc); }
+								}
+							}
+						}
+					}
+				}
+				if (csv != "") {
+					element ee = element();
+					ee.name = tablename;
+					ee.id = makemeahash(ee.name,(tln+rc));
+					output oo = output();
+					oo.name = tablename.concat("_spreadsheet");
+					oo.id = makemeahash(oo.name,(tln+rc));
+					oo.value = csv;
+					ee.outputs += oo;
+					if (themaths.length > 0) {
+						string fml = string.joinv("\n",themaths);
+						input ii = input();
+						ii.name = tablename.concat("_formulae");
+						ii.id = makemeahash(ii.name,f);
+						ii.value = fml;
+						ii.defaultv = fml;
+						ii.org = string.joinv("::",themaths);
+						ee.inputs += ii;
+						t = f;
+					}
+					headings[thisheading].elements += ee;
+				}
+				if (dospew) { print("[%d]%sfindtable captured a table element.\n",t,tabs); }
+				return (tln + rc);
+			}
+		}
+	}
+	if (dospew) { print("[%d]%sfindtable found nothing.\n",l,tabs); }
+	return (l + 1);
+}
+
 int findsrcblock (int l,int ind, string n) {
 	int64 stts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
@@ -401,7 +547,7 @@ int findsrcblock (int l,int ind, string n) {
 	}
 	if (srcblock.length > 2) {
 		string nwn = n;
-		if (spew) { if (n == "") { nwn =  "srcblock_%d".printf(typecount[2]); } }
+		if (n == "") { nwn =  "srcblock_%d".printf(typecount[2]); }
 		element ee = element();
 		ee.type = "srcblock";
 		ee.name = nwn;
@@ -863,7 +1009,7 @@ int findname(int l, int ind) {
 					}
 					if (bs.has_prefix("#+BEGIN_TABLE")) {
 						if (spew) { print("[%d]%s\t\tfound a table to capture...\n",b,tabs);}
-						//int c = findtable(b,(ind + 1));
+						int n = findtable(b,(ind+16),lsp[1]);
 					}
 					if (spew) { print("[%d]%sfindname found nothing.\n",b,tabs);}
 					return b;
@@ -890,7 +1036,7 @@ int searchfortreasure (int l, int ind) {
 		n = findname(n,ind);
 		n = findsrcblock(n,ind,"");
 		n = findexample(n,ind,"");
-		//l = findtable(l);
+		n = findtable(n,ind,"");
 		//l = findcommand(l);
 		n = findparagraph(n,ind);
 	}
@@ -975,8 +1121,8 @@ void main (string[] args) {
 			}
 		}
 		print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n",headings.length,typecount[5],typecount[1],typecount[2]);
-		int h = 0;
-		print("sample heading: headings[0]:\n");
+		int h = 1;
+		print("sample heading: headings[%d]:\n",h);
 		print("\t%s\n",headings[h].name);
 		print("\t\t%s.id       = %u\n",headings[h].name,headings[h].id);
 		print("\t\t%s.stars    = %d\n",headings[h].name,headings[h].stars);
