@@ -2,27 +2,29 @@
 // (naming a program is harder than writing it)
 // by c.p.brown 2023
 
-// work in progress:
-// - get headings OK
-// - get names OK
-// - get propbins OK
-// - get srcblocks OK? - needs more checking
-// - crosscheck - OK? - needs a closer look via UI later
-// TODO
-// - get example blocks
-// - get tables
-// - get commands
-// - get paragraphs
-// - get the nutsack
-
-// performance so-far (commandline only)
-// 18016-line orgfile (my tax backlog) : 1.16 seconds
-// crosscheck of the above : 60 millionths of a second
-
-// crosscheck should be slow, so its probably busted atm.
-// getting srcblocks was slowest, presumably because of all the substring(), contains(), and split() work requred to pull stuff out of #+BEGIN_SRC and turn it into inputs, outputs and parameters.
-
-// memory usage should be over 200mb, if Gifded is any example. Won't bother checking actuals until the UI is added to it.
+// TODO: 
+// - fix heading stars
+// - heading ui params
+//   - fold 
+// - fill the nutsack
+// - manipulation functions:
+//   - add heading
+//   - remove heading
+//   - rename heading
+//   - change heading todo
+//   - change heading tag
+//   - change heading priority
+//   - move heading up
+//   - move heading down
+//   - move heading in
+//   - move heading out
+//   - simple wildcard search syntax parser, eg: 
+//     [ name "*download*" and todo "*TODO" ] or tag "cpb*fy*tax"
+//     = (name.contains("download") && todo.has_postfix("TODO")) || (tag.has_prefix("cpb") && tag.has_postfix("tax") && tag.contains("fy"))
+//   - make heading sort (compare) fn from: name (string), todo (index), tag (string), priority (index)
+//   - make heading filter from: name (wildcard), todo (wildcard), tags (widlcard), priority (wildcard)
+//   - print full heading(s) using sort and filter
+//   - print folded heading(s) using sort and filter
 
 using GLib;
 
@@ -84,7 +86,7 @@ struct heading {
 	string			nutsack;		// misc stuff found under the headigng that wasn't captured as elements 
 }
 // globals
-// avoid dicking-around with refs, owned, unowned and other vala limitations
+// avoid dicking-around with refs, owned, unowned and other limitations
 
 string[]		lines;			// the lines of an orgfile
 string			srcblock;
@@ -180,6 +182,7 @@ uint makemeahash(string n, int t) {
 	DateTime dd = new DateTime.now_local();
 	return "%s_%d%d%d%d%d%d%d".printf(n,t,dd.get_year(),dd.get_month(),dd.get_day_of_month(),dd.get_hour(),dd.get_minute(),dd.get_microsecond()).hash();
 }
+
 /* TODO:
 uint[] evalpath (uint[] nn, uint me) {
 	bool allgood = true;
@@ -262,7 +265,6 @@ void printheadings (int ind) {
 		int pidx = getpribyid(headings[i].priority);
 		if (pidx < priorities.length) { p = "%s ".printf(priorities[pidx].name); }
 		if (headings[i].tags.length > 0) {
-			print("tag length = %d\n",headings[i].tags.length);
 			g = gettags(headings[i].tags);
 		}
 		print("%.*s %s%s%s%s\n",headings[i].stars,s,t,p,headings[i].name,g);
@@ -387,7 +389,7 @@ int findparagraph (int l, int ind) {
 int findtable (int l, int ind, string n) {
 	int64 ttts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	bool dospew = true;
+	bool dospew = spew;
 	if (dospew) { print("[%d]%sfindtable started...\n",l,tabs); }
 	string tablename = "";
 	if (n == "") { tablename =  "table_%d".printf(typecount[4]); }   // can NAME tables
@@ -473,6 +475,7 @@ int findtable (int l, int ind, string n) {
 				if (dospew) { print("[%d]%s\t\tfindtable looking for formulae...\n",t,tabs); }
 				string[] themaths = {};
 				string[] themathvars = {};
+				string[] themathorgvars = {};
 				int f = 0;
 				for (f = t; f < lines.length; f++) {
 					ls = lines[f].strip();
@@ -486,12 +489,31 @@ int findtable (int l, int ind, string n) {
 								themaths += lsp[m].strip();
 								string[] mp = lsp[m].strip().split("=");
 								if (mp.length > 1) {
-									int ms = mp[1].index_of("\'(") + 2;
-									
-									string mc = mp[1].substring(ms,(mp[1].length - ms));
-									int me = mc.index_of(")");
-									mc = mc.substring(0,me);
-									if (dospew) { print("[%d]%s\t\t\t\tfindtable found variable in formula: %s\n",f,tabs,mc); }
+									int ms = mp[1].index_of("\'(org-sbe");
+									if (ms > -1) {
+										int sbein = ms;
+										if (dospew) { print("[%d]%s\t\t\t\tfindtable search for org-sbe after \'=\': %d\n",f,tabs,ms); }
+										string mc = mp[1].substring((ms+9),(mp[1].length - (ms+9)));
+										if (dospew) { print("[%d]%s\t\t\t\tfindtable removed org-sbe: %s\n",f,tabs,mc); }
+										ms = mc.index_of("\"");
+										if (ms > -1 && ms < 3) {  
+											mc = mc.substring((ms+1),(mc.length - (ms+1)));
+											if (dospew) { print("[%d]%s\t\t\t\tfindtable removed leading \": %s\n",f,tabs,mc); }
+											ms = mc.index_of("\"");
+											if (ms > 0) {
+												mc = mc.substring(0,ms);
+												if (dospew) { print("[%d]%s\t\t\t\tfindtable extracted variable: %s\n",f,tabs,mc); }
+												if (mc != "") {
+													if( sbein < lsp[m].length) {
+														themathvars += mc;
+														mc = lsp[m].substring(sbein,(lsp[m].length - sbein));
+														themathorgvars += mc;
+														if (dospew) { print("[%d]%s\t\t\t\t\tfindtable found variable (%s) in formula: %s\n",f,tabs,themathvars[(themathvars.length - 1)],mc); }
+													} 
+												}
+											}
+										}
+									}
 								}
 							}
 						}
@@ -508,13 +530,22 @@ int findtable (int l, int ind, string n) {
 					ee.outputs += oo;
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
-						input ii = input();
+						param ii = param();
 						ii.name = tablename.concat("_formulae");
-						ii.id = makemeahash(ii.name,f);
 						ii.value = fml;
-						ii.defaultv = fml;
-						ii.org = string.joinv("::",themaths);
-						ee.inputs += ii;
+						if (themathvars.length > 0 && themathvars.length == themathorgvars.length) {
+							for(int x = 0; x < themathvars.length; x++) {
+								input ff = input();
+								ff.name = themathvars[x];
+								ff.id = makemeahash(ff.name,f);
+
+// org-sbe vals need to be obtained after an eval
+// so we just store its org syntax for now
+								ff.org = themathorgvars[x];
+								ee.inputs+= ff;
+							}
+						}
+						ee.params += ii;
 						t = f;
 					}
 					headings[thisheading].elements += ee;
@@ -851,7 +882,7 @@ int findheading (int l, int ind) {
 		aa.id = makemeahash(aa.name,l);
 		if (spew) { print("[%d]%s\tcollecting indentation...\n",l,tabs); }
 		int c = 0;
-		aa.stars = 1;
+		aa.stars = 0;
 		while (ls.get_char(c) == '*') {
 			aa.stars = aa.stars + 1;
 			c += 1;
@@ -1044,6 +1075,100 @@ int searchfortreasure (int l, int ind) {
 	return n;
 }
 
+int findtodos (int l, int ind) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("[%d]%sfindtodos started...\n",l,tabs);}
+	string ls = lines[l].strip();
+	if (ls.has_prefix("#+TODO:")) {
+		ls = ls.replace("#+TODO:","");
+		string[] lsp = ls.split(" ");
+		if (lsp.length > 0) {
+			for (int t = 0; t < lsp.length; t++) {
+				string tds = lsp[t].strip();
+				if (tds != "") {
+					if(tds[0] == '[' && tds[(tds.length - 1)] == ']') {
+						todo tt = todo();
+						tt.name = tds;
+						tt.id = makemeahash(tds,l);
+						todos += tt;
+						if (spew) { print("[%d]%s\tfindtodos captured a todo: %s\n",l,tabs,tds);}
+					}
+				}
+			}
+		}
+		return l;
+	}
+	if (spew) { print("[%d]%sfindtodos ended.\n",l,tabs);}
+	return 0;
+}
+
+int findpriorities (int l, int ind) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	bool dospew = true;
+	if (dospew) { print("[%d]%sfindpriorities started...\n",l,tabs);}
+	string ls = lines[l].strip();
+	if (ls.has_prefix("#+PRIORITIES:")) {
+		if (dospew) { print("[%d]%s\tfindpriorities found priorities line: %s\n",l,tabs,ls); }
+		string mahalfabets = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		ls = ls.replace("#+PRIORITIES:","").strip();
+		string lsp = ls.replace(" ","");
+		if (lsp[0].isdigit()) {
+			string[] lsps = ls.split(" ");
+			if (dospew) { print("[%d]%s\t\tfindpriorities split priorities into %d vals\n",l,tabs,lsp.length); }
+			if (lsps.length == 3) {
+				//if (dospew) { print("a = %c, b = %c, c = %c\n",lsp[0],lsp[1],lsp[2]); }
+				int aa = lsps[0].to_int();
+				int bb = lsps[1].to_int();
+				int cc = lsps[2].to_int();
+				if (aa > -1 && bb > -1 && cc > -1) {
+					if (dospew) { print("[%d]%s\t\t\taa = %d, bb = %d, cc = %d\n",l,tabs,aa,bb,cc); }
+					if (aa < bb && cc <= bb && aa <= cc) {
+						for (int t = aa; t <= bb; t++) {
+							string tds = "%d".printf(t);
+							if (tds != "") {
+								tds = "[#%s]".printf(tds);
+								priority pp = priority();
+								pp.name = tds;
+								pp.id = makemeahash(tds,l);
+								priorities += pp;
+								if (dospew) { print("[%d]%s\tfindpriorities captured a priority: %s\n",l,tabs,tds); }
+							}
+						}
+					}
+				}
+			}
+		} else {
+			if (dospew) { print("[%d]%s\t\tfindpriorities split priorities into %d vals\n",l,tabs,lsp.length); }
+			if (lsp.length == 3) {
+				//if (dospew) { print("a = %c, b = %c, c = %c\n",lsp[0],lsp[1],lsp[2]); }
+				int aa = mahalfabets.index_of(lsp[0].to_string());
+				int bb = mahalfabets.index_of(lsp[1].to_string());
+				int cc = mahalfabets.index_of(lsp[2].to_string());
+				if (aa > -1 && bb > -1 && cc > -1) {
+					//if (dospew) { print("aa = %d, bb = %d, cc = %d\n",aa,bb,cc); }
+					if (dospew) { print("[%d]%s\t\t\taa = %d (%c), bb = %d (%c), cc = %d (%c)\n",l,tabs,aa,mahalfabets[aa],bb,mahalfabets[bb],cc,mahalfabets[cc]); }
+					if (aa < bb && cc <= bb && aa <= cc) {
+						for (int t = aa; t <= bb; t++) {
+							string tds = (mahalfabets[t].to_string());
+							if (tds != "") {
+								tds = "[#%s]".printf(tds);
+								priority pp = priority();
+								pp.name = tds;
+								pp.id = makemeahash(tds,l);
+								priorities += pp;
+								if (dospew) { print("[%d]%s\tfindpriorities captured a priority: %s\n",l,tabs,tds); }
+							}
+						}
+					}
+				}
+			}
+		}
+		return l;
+	}
+	if (dospew) { print("[%d]%sfindpriorities ended.\n",l,tabs);}
+	return 0;
+}
+
 void main (string[] args) {
 	int64 ftts = GLib.get_real_time();
 	spew = false;
@@ -1094,8 +1219,12 @@ void main (string[] args) {
 			string ls = "";
 			if (spew) { print("\nreading lines...\n"); }
 			lines = sorg.split("\n");
+			int todoline = 0;
+			int priorityline = 0;
 			int i = 0;
 			while (i < lines.length) {
+				if (todoline == 0 || i < 100) { todoline = findtodos(i,1); }
+				if (priorityline == 0 || i < 100) { priorityline = findpriorities(i,1); }
 				if (spew) { print("[%d] = %s\n",i,lines[i]); }
 				i = searchfortreasure(i,1);
 			}
