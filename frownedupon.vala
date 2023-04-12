@@ -2,7 +2,7 @@
 // org-compatible branchng script queue
 // by c.p.brown 2023
 //
-// status: all strewn across the yard atm...
+// status: working on the exponentially unfurling glitterbomb of GTK OOP shitfuckery...
 
 
 using GLib;
@@ -10,13 +10,16 @@ using GLib;
 // data.
 // using pointers experimentally
 // everyone says don't use pointers, so I'll find out why soon-enough
+// ...
+// ok ok random segfault city. I get it.
+// will try to make them work for links tho
 
 struct output {
 	uint id;
 	string name;
 	input* target;
 	string value;
-	element* owner;
+	uint owner;
 }
 struct input {
 	uint id;
@@ -25,21 +28,21 @@ struct input {
 	string value;
 	string defaultv;
 	string org;
-	element* owner;
+	uint owner;
 }
 struct param {
 	string name;
 	string value;
-	element* owner;
+	uint owner;
 }
 struct element {
 	string			name;			// can be whatever, but try to autoname to be unique
 	uint			id;			// hash of name + iterator + time
 	string			type;			// used for ui, writing back to org
-	input*[]		inputs;		// can take input wires
-	output*[]		outputs;		// can be wired out
-	param*[]		params;		// local params; no wiring
-	heading*		owner;			// 
+	input[]		inputs;		// can take input wires
+	output[]		outputs;		// can be wired out
+	param[]		params;		// local params; no wiring
+	uint			owner;			// 
 }
 struct todo {
 	string			name;			// todo string, must be unique
@@ -69,8 +72,8 @@ struct heading {
 	uint			todo;			// id of todo, one per heading
 	uint[]			tags;			// id[] of tags, many per heading
 	uint			template;		// internal use only: template id
-	param*[]		params;		// internal use only: fold, visible, positions 
-	element*[]		elements;		// elements under this heading, might be broken out into flat lists later
+	param[]		params;		// internal use only: fold, visible, positions 
+	element[]		elements;		// elements under this heading, might be broken out into flat lists later
 	string			nutsack;		// misc stuff found under the headigng that wasn't captured as elements 
 }
 // globals
@@ -86,17 +89,22 @@ param[]		params;
 input[]		inputs;
 output[]		outputs;
 int			thisheading;	// index of current heading
-int[]			typecount;		// used for naming
+int[]			typecount;		// used for naming: 0 paragraph, 1 propdrawer, 2 srcblock, 3, example, 4 table, 5 command, 6 nametag
 bool			spew;			// print
 bool			hard;			// print more
 tag[]			tags;
 priority[]		priorities;
 todo[]			todos;
-
+bool			doup;			// block ui events
+uint			sel;			// selected item (fixed)
+int			hidx;			// header list index of selected item (volatile)
+string[]		paneltypes;
+Gtk.Entry		saveentry;		// save file feeld
+Gtk.Paned		vdiv;			// needed for reflow, resize, etc.
 
 int imod (int a, int b) {
 	if (a >= 0) { return (a % b); }
-	if (a >= -r) { return (a + b); }
+	if (a >= -b) { return (a + b); }
 	return ((a % b) + b) % b;
 }
 
@@ -158,19 +166,8 @@ bool notintodonames (string n, todo[] h) {
 
 uint makemeahash(string n, int t) {
 	DateTime dd = new DateTime.now_local();
-	return "%s_%d%d%d%d%d%d%d".printf(n,t,dd.get_year(),dd.get_month(),dd.get_day_of_month(),dd.get_hour(),dd.get_minute(),dd.get_microsecond()).hash();
-}
-
-void backwashelement(int e) {
-	for (int i = 0; i < elements[e].inputs.length; i++) {
-		elements[e].inputs[i].owner = &elements[e];
-	}
-	for (int i = 0; i < elements[e].outputs.length; i++) {
-		elements[e].outputs[i].owner = &elements[e];
-	}
-	for (int i = 0; i < elements[e].params.length; i++) {
-		elements[e].params[i].owner = &elements[e];
-	}
+	//print("MAKEMEAHASH: hashing %s_%d_%lld ...\n",n,t,GLib.get_real_time());
+	return "%s_%d_%lld".printf(n,t,GLib.get_real_time()).hash();
 }
 
 /* TODO:
@@ -282,18 +279,16 @@ int findexample (int l, int ind, string n) {
 			if (n != "") { txtname = n; }
 			element ee = element();
 			ee.name = txtname;
+			ee.type = "example";
 			ee.id = makemeahash(ee.name,c);
 			output pp = output();
 			pp.name = ee.name.concat("_verbatimtext");
 			pp.id = makemeahash(ee.name, c);
 			pp.value = string.joinv("\n",txt);
-			outputs += pp;
-			ee.outputs += &outputs[(outputs.length - 1)];
+			ee.outputs += pp;
 			typecount[3] += 1;
-			elements += ee;
-			backwashelement(elements.length - 1);
-			elements[(elements.length - 1)].owner = &headings[thisheading];
-			headings[thisheading].elements += &elements[(elements.length - 1)];
+			ee.owner = headings[thisheading].id;
+			headings[thisheading].elements += ee;
 			if (spew) { print("[%d]%s\tsuccessfully captured verbatim text\n",c,tabs); }
 			if (spew) { print("[%d]%sfindexample ended.\n",c,tabs); }
 			int64 xtte = GLib.get_real_time();
@@ -312,6 +307,8 @@ int findparagraph (int l, int ind) {
 	int64 phtts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	if (spew) { print("[%d]%sfindparagraph started...\n",l,tabs); }
+	if (spew) { print("[%d]%sheadings[%d].name = %s\n",l,tabs,thisheading,headings[thisheading].name); }
+	if (spew) { print("[%d]%sheadings[%d].id = %u\n",l,tabs,thisheading,headings[thisheading].id); }
 	string txtname = "paragraph_%d".printf(typecount[0]);
 	//if (n == "") { txtname =  "srcblock_%d".printf(typecount[2]); }  // don't NAME paragraphs
 	string[] txt = {};
@@ -320,6 +317,9 @@ int findparagraph (int l, int ind) {
 		string cs = lines[c].strip();
 		if (cs.has_prefix("*")) { break; }
 		if (cs.has_prefix("#+")) { break; }
+		if (cs.has_prefix(";#+")) { break; }
+		if (cs.has_prefix("# -*-")) { break; }
+		if (cs.has_prefix("#-*-")) { break; }
 		if (cs.has_prefix(": ")) { break; }
 		if (cs.has_prefix(":PROPERTIES:") || cs.has_prefix(":END:")) { break; }
 		if (spew) { print("[%d]%s\t plain text: %s\n",c,tabs,lines[c]); }
@@ -330,48 +330,55 @@ int findparagraph (int l, int ind) {
 		element ee = element();
 		ee.name = txtname;
 		ee.id = makemeahash(ee.name,c);
+		ee.type = "paragraph";
 		output pp = output();
+		pp.target = null;
 		pp.name = ee.name.concat("_text");
 		pp.id = makemeahash(ee.name, c);
 		pp.value = string.joinv("\n",txt);
-		outputs += pp;
-		ee.outputs += &outputs[(outputs.length - 1)];
+		pp.owner = ee.id;
+		ee.outputs += pp;
 		for (int d = 0; d < txt.length; d++) {
 // minum text size for a [[val:v]] link
 			if (txt[d].length > 9) { 
-				if (spew) { print("[%d]%s\t\tlooking for val:var links in text...\n",c,tabs); }
+				if (spew) { print("[%d]%s\t\tlooking for val:var links in text: %s\n",c,tabs,txt[d]); }
 				if (txt[d].contains("[[val:") && txt[d].contains("]]")) {
+					if (spew) { print("[%d]%s\t\t\ttxt[%d] has a link: %s\n",c,tabs,d,txt[d]); }
 // ok now for the dumb part:
 					string chmpme = txt[d];
 					int safeteycheck = 100;
 					while (chmpme.contains("[[val:") && chmpme.contains("]]")) {
+						if (spew) { print("[%d]%s\t\t\tchmpme still has a link: %s\n",c,tabs,chmpme); }
 						int iidx = chmpme.index_of("[[val:");
 						int oidx = chmpme.index_of("]]") + 2;
-						string chmp = txt[d].substring(iidx,(oidx - iidx));
-						if (chmp != null && chmp != "") {
-							if (spew) { print("[%d]%s\t\t\textracted link: %s\n",c,tabs,chmp); }
-							input qq = input();
-							qq.org = chmp;
-							qq.defaultv = chmp;
-							chmpme = chmpme.replace(chmp,"");
-							chmp = chmp.replace("]]","");
-							qq.name = chmp.split(":")[1];
-							qq.id = makemeahash(qq.name,c);
-							inputs += qq;
-							ee.inputs += &inputs[(inputs.length - 1)];
-							if (spew) { print("[%d]%s\t\t\tstored link ref: %s\n",c,tabs,qq.name); }
-							safeteycheck += 1;
-// suckshit if there's over 100 links in a paragraph
-							if (safeteycheck > 100) { break; }
+						if (oidx > iidx) { 
+							string chmp = txt[d].substring(iidx,(oidx - iidx));
+							if (chmp != null && chmp != "") {
+								if (spew) { print("[%d]%s\t\t\textracted link: %s\n",c,tabs,chmp); }
+								input qq = input();
+								qq.source = null;
+								qq.org = chmp;
+								qq.defaultv = chmp;
+								chmpme = chmpme.replace(chmp,"");
+								chmp = chmp.replace("]]","");
+								qq.name = chmp.split(":")[1];
+								qq.id = makemeahash(qq.name,c);
+								qq.owner = ee.id;
+								ee.inputs += qq;
+								if (spew) { print("[%d]%s\t\t\tstored link ref: %s\n",c,tabs,qq.name); }
+	// suckshit if there's over 100 links in a paragraph
+								if (safeteycheck > 100) { break; }
+							}
 						}
+						safeteycheck += 1;
 					}
 				}
 			}
 		}
-		elements += ee;
-		backwashelement(elements.length - 1);
-		elements[(elements.length - 1)].owner = &headings[thisheading];
-		headings[thisheading].elements += &elements[(elements.length - 1)];
+		if (spew) { print("[%d]%s\tcapturing owner id: %u\n",c,tabs,headings[thisheading].id); }
+		ee.owner = headings[thisheading].id;
+		if (spew) { print("[%d]%s\tcapturing element: %s\n",c,tabs,ee.name); }
+		headings[thisheading].elements += ee;
 		typecount[0] += 1;
 		if (spew) { print("[%d]%s\tsuccessfully captured plain text\n",c,tabs); }
 		if (spew) { print("[%d]%sfindparagraph ended.\n",c,tabs); }
@@ -523,13 +530,14 @@ int findtable (int l, int ind, string n) {
 				if (csv != "") {
 					element ee = element();
 					ee.name = tablename;
+					ee.type = "table";
 					ee.id = makemeahash(ee.name,(tln+rc));
 					output oo = output();
 					oo.name = tablename.concat("_spreadsheet");
 					oo.id = makemeahash(oo.name,(tln+rc));
 					oo.value = csv;
-					outputs += oo;
-					ee.outputs += &outputs[(outputs.length - 1)];
+					oo.owner = ee.id;
+					ee.outputs += oo;
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
 						param ii = param();
@@ -544,12 +552,12 @@ int findtable (int l, int ind, string n) {
 // org-sbe vals need to be obtained after an eval
 // so we just store its org syntax for now
 								ff.org = themathorgvars[x];
-								inputs += ff;
-								ee.inputs+= &inputs[(inputs.length - 1)];
+								ff.owner = ee.id;
+								ee.inputs+= ff;
 							}
 						}
-						params += ii;
-						ee.params += &params[(params.length - 1)];
+						ii.owner = ee.id;
+						ee.params += ii;
 						t = f;
 					}
 // move carrot to next line after table block, search up to 10 lines forward...
@@ -557,10 +565,8 @@ int findtable (int l, int ind, string n) {
 						if (lines[t].strip().has_prefix("#+END_TABLE")){ t = (f + 1); break; }
 					}
 					typecount[4] += 1;
-					elements += ee;
-					backwashelement(elements.length - 1);
-					elements[(elements.length - 1)].owner = &headings[thisheading];
-					headings[thisheading].elements += &elements[(elements.length - 1)];
+					ee.owner = headings[thisheading].id;
+					headings[thisheading].elements += ee;
 					if (dospew) { print("[%d]%sfindtable captured a table element.\n",t,tabs); }
 					int64 ttte = GLib.get_real_time();
 					if (spew) { print("\nfind table took %f microseconds\n\n",((double) (ttte - ttts)));}
@@ -610,8 +616,8 @@ int findsrcblock (int l,int ind, string n) {
 		param cc = param();
 		cc.name = nwn.concat("_code");
 		cc.value = src;
-		params += cc;
-		ee.params += &params[(params.length - 1)];
+		cc.owner = ee.id;
+		ee.params += cc;
 		if (spew) { print("[%d]%s\tsrc block code stored as parameter: %s\n",b,tabs,cc.name); }
 
 // turn src type into local parameter
@@ -624,8 +630,8 @@ int findsrcblock (int l,int ind, string n) {
 					param tt = param();
 					tt.name = "type";
 					tt.value = hpt[1];
-					params += tt;
-					ee.params += &params[(params.length - 1)];
+					tt.owner = ee.id;
+					ee.params += tt;
 					if (spew) { print("[%d]%s\t\tstored type parameter: %s\n",b,tabs,hpt[1]); }
 				}
 			}
@@ -687,8 +693,8 @@ int findsrcblock (int l,int ind, string n) {
 							ip.value = hvars[(p+1)];							// value - volatile
 							ip.org = "%s=%s".printf(hvars[p],hvars[(p+1)]);	// org syntax
 							ip.defaultv = hvars[(p+1)];						// fallback value
-							inputs += ip;
-							ee.inputs += &inputs[(inputs.length - 1)];
+							ip.owner = ee.id;
+							ee.inputs += ip;
 						} else { break; }
 						p += 1;
 					}
@@ -731,8 +737,8 @@ int findsrcblock (int l,int ind, string n) {
 							param pp = param();
 							pp.name = o[p];			// name
 							pp.value = o[(p+1)];		// value - volatile
-							params += pp;
-							ee.params += &params[(params.length - 1)];
+							pp.owner = ee.id;
+							ee.params += pp;
 						} else { break; }
 						p += 1;
 					}
@@ -789,12 +795,10 @@ int findsrcblock (int l,int ind, string n) {
 		}
 		resblock._chomp();
 		rr.value = resblock;
-		outputs += rr;
-		ee.outputs += &outputs[(outputs.length - 1)];
-		elements += ee;
-		backwashelement(elements.length - 1);
-		elements[(elements.length - 1)].owner = &headings[thisheading];
-		headings[thisheading].elements += &elements[(elements.length - 1)];
+		rr.owner = ee.id;
+		ee.outputs += rr;
+		ee.owner = headings[thisheading].id;
+		headings[thisheading].elements += ee;
 		typecount[2] += 1;
 		if (spew) { print("[%d]%sfindsrcblock ended.\n",c,tabs); }
 		int64 stte = GLib.get_real_time();
@@ -831,11 +835,10 @@ int findpropbin(int l, int ind) {
 			ee.id = makemeahash(ee.name,l);
 			for (int b = (l + 1); b < lines.length; b++) {
 				if (lines[b].strip() == ":END:") { 
-					elements += ee;
-					backwashelement(elements.length - 1);
-					elements[(elements.length - 1)].owner = &headings[thisheading];
-					headings[thisheading].elements += &elements[(elements.length - 1)];
+					ee.owner = headings[thisheading].id;
+					headings[thisheading].elements += ee;
 					typecount[1] += 1;
+					if (spew) { print("[%d]%sfindpropbin captured propbin %s\n",b,tabs,ee.name); }
 					if (spew) { print("[%d]%sfindpropbin ended.\n",b,tabs); }
 					int64 ptte = GLib.get_real_time();
 					if (spew) { print("\nfind propbin took %f microseconds\n\n",((double) (ptte - ptts))); }
@@ -847,8 +850,8 @@ int findpropbin(int l, int ind) {
 					o.name = propparts[1].strip();
 					o.value = propparts[2].strip();
 					o.id = o.name.hash();
-					outputs += o;
-					ee.outputs += &outputs[(outputs.length - 1)];
+					o.owner = ee.id;
+					ee.outputs += o;
 					if (spew) { print("[%d]%s\tcaptured property: %s = %s\n",b,tabs,o.name,o.value); }
 				}
 			}
@@ -1000,17 +1003,15 @@ int findname(int l, int ind) {
 			element ee = element();
 			ee.name = "namevar_%s".printf(lsp[1]);
 			ee.id = ee.name.hash();
-			ee.type = "namevar";
+			ee.type = "nametag";
 			output oo = output();
 			oo.name = lsp[1];
 			oo.id = oo.name.hash();
 			oo.value = lsp[2];
-			outputs += oo;
-			ee.outputs += &outputs[(outputs.length - 1)];
-			elements += ee;
-			backwashelement(elements.length - 1);
-			elements[(elements.length - 1)].owner = &headings[thisheading];
-			headings[thisheading].elements += &elements[(elements.length - 1)];
+			oo.owner = ee.id;
+			ee.outputs += oo;
+			ee.owner = headings[thisheading].id;
+			headings[thisheading].elements += ee;
 			typecount[6] += 1;
 			if (spew) { print("[%d]%s\t\tfindname captured a namevar\n",l,tabs); }
 			if (spew) { print("[%d]%sfindname ended.\n",(l + 1),tabs); }
@@ -1088,24 +1089,29 @@ int findtodos (int l, int ind) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	if (spew) { print("[%d]%sfindtodos started...\n",l,tabs);}
 	string ls = lines[l].strip();
-	if (ls.has_prefix("#+TODO:")) {
-		ls = ls.replace("#+TODO:","");
-		string[] lsp = ls.split(" ");
-		if (lsp.length > 0) {
-			for (int t = 0; t < lsp.length; t++) {
-				string tds = lsp[t].strip();
-				if (tds != "") {
-					if(tds[0] == '[' && tds[(tds.length - 1)] == ']') {
-						todo tt = todo();
-						tt.name = tds;
-						tt.id = makemeahash(tds,l);
-						todos += tt;
-						if (spew) { print("[%d]%s\tfindtodos captured a todo: %s\n",l,tabs,tds);}
+	if (ls != "") {
+		if (ls.has_prefix("#+TODO:")) {
+			ls = ls.replace("#+TODO:","");
+			string[] lsp = ls.split(" ");
+			if (lsp.length > 0) {
+				for (int t = 0; t < lsp.length; t++) {
+					string tds = lsp[t].strip();
+					if (tds != "") {
+						if(tds[0] == '[' && tds[(tds.length - 1)] == ']') {
+							if (spew) { print("[%d]%s\tfindtodos capturing a todo: %s...\n",l,tabs,tds);}
+							todo tt = todo();
+							tt.name = tds;
+							if (spew) { print("[%d]%s\tfindtodos making a todo hash...\n",l,tabs);}
+							tt.id = makemeahash(tds,l);
+							if (spew) { print("[%d]%s\tfindtodos adding todo to list...\n",l,tabs);}
+							todos += tt;
+							if (spew) { print("[%d]%s\tfindtodos captured a todo: %s\n",l,tabs,tds);}
+						}
 					}
 				}
 			}
+			return l;
 		}
-		return l;
 	}
 	if (spew) { print("[%d]%sfindtodos ended.\n",l,tabs);}
 	return 0;
@@ -1178,29 +1184,9 @@ int findpriorities (int l, int ind) {
 	return 0;
 }
 
-void main (string[] args) {
-	int64 ftts = GLib.get_real_time();
-	spew = true;
-	for (int i = 1; i < args.length; i++) { 
-		if (args[i] == "-q") {
-			spew = false;
-		}
-	}
-	thisheading = -1;
-// load test file
-	string defile = "test.org";
-	if (args.length > 1) { 
-		if (args[1] != null && args[1].strip() != "") {
-			print("args[1] = %s\n",args[1]);
-			if (args[1].strip().split(".").length == 2) {
-				if (args[1].strip().split(".")[1] == "org") {
-					defile = args[1].strip();
-				}
-			}
-		}
-	}
-			
-	if (spew) { print("loading testme.org...\n");}
+void loadmemyorg (string defile) {
+	print("loadmemyorg: loading %s\n",defile);
+// test file override
 	string ff = Path.build_filename ("./", defile);
 	File og = File.new_for_path(ff);
 	if (og.query_exists() == true) {
@@ -1214,28 +1200,50 @@ void main (string[] args) {
 			print ("\tfailed to read %s: %s\n", og.get_path(), e.message);
 		}
 		if (sorg.strip() != "") {
-			string propbin = "";
-			srcblock = "";
-			string results = "";
-			string resblock = "";
-	// type counts, used to name un-named elements on creation, not used for renaming
-	// this will change in future, so replace it with something more descriptive
-	// typecount[0] = paragraph element count
-	// typecount[1] = propertydrawer element count
-	// typecount[2] = un-named srcblock element count
-	// typecount[3] = un-named example element count
-	// typecount[4] = un-named table element count
-	// typecount[5] = command element count
-	// typecount[6] = nametags - not useful as they're already named, just counting them here
+			print("loadmemyorg: clearing the arrays...\n");
+			/*
+			headings = {};
+			elements = {};
+			params = {};
+			inputs = {};
+			outputs = {};
+			typecount = {0,0,0,0,0,0,0};
+			tags = {};
+			priorities = {};
+			todos = {};
+			lines = {};
+			sel = -1;
+			hidx = 0;
+			*/
+			thisheading = -1;
+			print("loadmemyorg: headings.length   = %d\n",headings.length);
+			print("loadmemyorg: elements.length   = %d\n",elements.length);
+			print("loadmemyorg: params.length     = %d\n",params.length);
+			print("loadmemyorg: inputs.length     = %d\n",inputs.length);
+			print("loadmemyorg: outputs.length    = %d\n",outputs.length);
+			print("loadmemyorg: tags.length       = %d\n",tags.length);
+			print("loadmemyorg: priorities.length = %d\n",priorities.length);
+			print("loadmemyorg: todos.length      = %d\n",todos.length);
+// type counts, used to name un-named elements on creation, not used for renaming
+// this will change in future, so replace it with something more descriptive
+// typecount[0] = paragraph element count
+// typecount[1] = propertydrawer element count
+// typecount[2] = un-named srcblock element count
+// typecount[3] = un-named example element count
+// typecount[4] = un-named table element count
+// typecount[5] = command element count
+// typecount[6] = nametags - not useful as they're already named, just counting them here
 			typecount = {0,0,0,0,0,0,0};
 			headingname = "";
 			string srcname = "";
 			string ls = "";
-			if (spew) { print("\nreading lines...\n"); }
+			print("\nreading lines...\n");
 			lines = sorg.split("\n");
+			print("loadmemyorg: %d lines read OK.\n",lines.length);
 			int todoline = 0;
 			int priorityline = 0;
 			int i = 0;
+			spew = true;
 // harvest
 // allow up to 100 lines of config, then stop searching for todos and priorities
 // stop searching for config after 2nd heading
@@ -1245,14 +1253,524 @@ void main (string[] args) {
 				if (spew) { print("[%d] = %s\n",i,lines[i]); }
 				i = searchfortreasure(i,1);
 			}
-
-			print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n\n",headings.length,typecount[5],typecount[1],typecount[2]);
-			printheadings(0);
-			foreach(todo d in todos) { print("%u todo: %s\n",d.id,d.name); }
-			foreach(priority d in priorities) { print("%u priority: %s\n",d.id,d.name); }
-			foreach(tag d in tags) { print("%u tag: %s\n",d.id,d.name); }
+			if(spew) { print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n\n",headings.length,typecount[5],typecount[1],typecount[2]); }
+			if (headings.length > 0) { sel = headings[0].id; hidx = 0; }
+			if (spew) { print("checking elements...\n"); }
+			for (int h = 0; h < headings.length; h++) {
+				print("heading %s has %d elements\n",headings[h].name,headings[h].elements.length);
+				for (int e = 0; e < headings[h].elements.length; e++) {
+					print("\t\telement %s is of type %s\n",headings[h].elements[e].name,headings[h].elements[e].type);
+					print("\t\telement %s has %d inputs\n",headings[h].elements[e].name,headings[h].elements[e].inputs.length);
+					print("\t\telement %s has %d outputs\n",headings[h].elements[e].name,headings[h].elements[e].outputs.length);
+					print("\t\telement %s has %d params\n",headings[h].elements[e].name,headings[h].elements[e].params.length);
+				} 
+			}
 		} else { print("Error: orgfile was empty.\n"); }
 	} else { print("Error: couldn't find orgfile.\n"); }
-	int64 ftte = GLib.get_real_time();
-	print("\ntestparse.vala took %f seconds\n\n",((((double) (ftte - ftts)) / 1000000.0)));
+}
+
+void restartui(int ww) {
+	ModalBox panea = new ModalBox(0);
+	ModalBox paneb = new ModalBox(1);
+	vdiv.get_first_child().destroy();
+	vdiv.get_last_child().destroy();
+	vdiv.start_child = panea;
+	vdiv.end_child = paneb;
+}
+
+//    ____________  ____   ____  ____________
+//---/*           \/*   \ /*   \/*           \------------+ *
+//  /  .          .\ .   \  `   \ *. .*      .\
+//--\       \   ___/      \      \    `    \  /-------------+ *
+//---\       \_/*   \      \      \    .    \/----------------+ *
+//    \       \__`   \      \__    \  __*    \___
+//     \   .          \ .           \/*          \
+//------\   *.       .*\ *.        .*\ *.       .*\---------+ *
+//-------\             /             /            /--------+ *
+//        \___________/\____________/\___________/
+//--------------------------------------------------------------+ *
+
+public class frownedupon :  Gtk.Application {
+	construct { application_id = "com.cpbrown.frownedupon"; flags = ApplicationFlags.FLAGS_NONE; }
+}
+
+// ui containers within containters within containers...
+
+public class InputRow : Gtk.Box {
+	private Gtk.Label inputvar;
+	private Gtk.Box inputcontainer;
+	private Gtk.Entry inputdefvar;
+	private string inpcss;
+	private Gtk.CssProvider inpcsp;
+	public InputRow (int e, int idx) {
+		print("INPUTROW: started (%d, %d)\n",e,idx);
+		if (idx < headings[hidx].elements[e].inputs.length) {
+			inputvar = new Gtk.Label(null);
+			inputvar.set_text(headings[hidx].elements[e].inputs[idx].name);
+			inputdefvar = new Gtk.Entry();
+			inputdefvar.set_text(headings[hidx].elements[e].inputs[idx].defaultv);
+			print("INPUTROW:\tinput label: %s\n",inputvar.get_text());
+			inputcontainer = new Gtk.Box(HORIZONTAL,5);
+			inputcontainer.append(inputvar);
+			inputcontainer.append(inputdefvar);
+			inputcontainer.vexpand = true;
+			inputcontainer.margin_top = 4;
+			inputcontainer.margin_start = 4;
+			inputcontainer.margin_end = 4;
+			inputcontainer.margin_bottom = 4;
+
+// some elements can't edit inputs here
+			if (headings[hidx].elements[e].type != "paragraph" && headings[hidx].elements[e].type != "table") {
+				print("add input overrides here\n");
+			}
+			inpcsp = new Gtk.CssProvider();
+			inpcss = ".xx { background: #ffDD8820; box-shadow: 2px 2px 2px #00000066; }";
+			inpcsp.load_from_data(inpcss.data);
+			this.get_style_context().add_provider(inpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			this.get_style_context().add_class("xx");
+			this.margin_top = 10;
+			this.margin_start = 10;
+			this.margin_end = 10;
+			this.margin_bottom = 10;
+			this.append(inputcontainer);
+		}
+	}
+}
+
+public class ParagraphBox : Gtk.Box {
+	private Gtk.Box parabox;
+	private Gtk.Entry paraname;
+	private Gtk.Label paranamelabel;
+	private Gtk.Box parainputbox;
+	private GtkSource.Buffer paratextbuff;
+	private GtkSource.View paratext;
+	private Gtk.TextTagTable paratagtable;
+	private Gtk.Box parainputcontrolbox;
+	private Gtk.Label parainputlabel;
+	private Gtk.ToggleButton parainputfoldbutton;
+	private string inpcss;
+	private Gtk.CssProvider inpcsp;
+	private string parcss;
+	private Gtk.CssProvider parcsp;
+	public ParagraphBox (int idx) {
+		print("PARAGRAPHBOX: started (%d)\n",idx);
+		if (idx < headings[hidx].elements.length) {
+			if (headings[hidx].elements[idx].type != null && headings[hidx].elements[idx].type == "paragraph") {
+				print("PARAGRAPHBOX:\tfound a paragraph element: %s\n",headings[hidx].elements[idx].name);
+				parabox = new Gtk.Box(VERTICAL,10);
+				paranamelabel = new Gtk.Label("Name:");
+				paraname = new Gtk.Entry();
+				parabox.append(paraname);
+				paraname.text = headings[hidx].elements[idx].name;
+				if (headings[hidx].elements[idx].inputs.length > 0) {
+					parainputbox = new Gtk.Box(VERTICAL,4);
+					parainputcontrolbox = new Gtk.Box(HORIZONTAL,5);
+					parainputlabel = new Gtk.Label("Inputs");
+					parainputfoldbutton = new Gtk.ToggleButton.with_label("-");
+					parainputcontrolbox.append(parainputlabel);
+					parainputcontrolbox.append(parainputfoldbutton);
+					parainputbox.append(parainputcontrolbox);
+					parainputcontrolbox.margin_top = 10;
+					parainputcontrolbox.margin_bottom = 10;
+					parainputcontrolbox.margin_start = 10;
+					parainputcontrolbox.margin_end = 10;
+					inpcsp = new Gtk.CssProvider();
+					inpcss = ".xx { background: #88DDFF20; box-shadow: 2px 2px 2px #00000066; }";
+					inpcsp.load_from_data(inpcss.data);
+					parainputbox.get_style_context().add_provider(inpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+					parainputbox.get_style_context().add_class("xx");
+					print("PARAGRAPHBOX:\tfetching %d inputs...\n",headings[hidx].elements[idx].inputs.length);
+					for (int i = 0; i < headings[hidx].elements[idx].inputs.length; i++) {
+						InputRow parainputrow = new InputRow(idx,i);
+						parainputbox.append(parainputrow);
+					}
+					parainputbox.hexpand = true;
+					parabox.append(parainputbox);
+					parabox.margin_top = 10;
+					parabox.margin_bottom = 10;
+					parabox.margin_start = 10;
+					parabox.margin_end = 10;
+					parabox.hexpand = true;
+				}
+				parcsp = new Gtk.CssProvider();
+				parcss = ".xx { background: #88888820; box-shadow: 2px 2px 2px #00000066; }";
+				parcsp.load_from_data(parcss.data);
+				this.get_style_context().add_provider(parcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				this.get_style_context().add_class("xx");
+				this.margin_top = 10;
+				this.margin_start = 10;
+				this.margin_end = 10;
+				this.margin_bottom = 10;
+				this.hexpand = true;
+				this.append(parabox);
+			}
+		}
+	}
+}
+/*
+public class SourceBox : Gtk.Box {
+
+}
+
+public class ExampleBox : Gtk.Box {
+
+}
+
+public class NameBox : Gtk.Box {
+
+}
+
+public class PropertyBox : Gtk.Box {
+
+}
+
+public class TableBox : Gtk.Box {
+
+}
+*/
+
+public class HeadingBox : Gtk.Box {
+	private Gtk.Box hbox;
+	private Gtk.Entry hname;
+	private string hedcss;
+	private Gtk.CssProvider hedcsp;
+	public HeadingBox (int idx) {
+		print("HEADINGBOX: started...\n");
+		if (idx < headings.length - 1) {
+			print("HEADINGBOX:\tmaking heading for: %s\n",headings[idx].name);
+			hbox = new Gtk.Box(HORIZONTAL,10);
+			hname = new Gtk.Entry();
+			hbox.append(hname);
+			hname.text = headings[idx].name;
+			this.margin_top = 10;
+			this.margin_start = 10;
+			this.margin_end = 10;
+			this.margin_bottom = 10;
+			hedcsp = new Gtk.CssProvider();
+			hedcss = ".xx { background: #44444420; box-shadow: 2px 2px 2px #00000066; }";
+			hedcsp.load_from_data(hedcss.data);
+			this.get_style_context().add_provider(hedcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			this.get_style_context().add_class("xx");
+			this.append(hbox);
+		}
+		print("HEADINGBOX: ended.\n");
+	}
+}
+
+public class ParamBox : Gtk.Box {
+	private HeadingBox heb;
+	public uint owner;
+	private ParagraphBox ebpara;
+	public void updateme (uint h){
+		print("PARAMBOX.UPDATEME: started...\n");
+		print("PARAMBOX.UPDATEME: looking for header: %u\n",h);
+		int myh = -1;
+		for (int i = 0; i < headings.length; i++) {
+			print("PARAMBOX.UPDATEME:\tchecking header id %u\n",headings[i].id);
+			if (headings[i].id == h) { myh = i; hidx = i; break; } 
+		}
+		if (myh != -1) {
+			print("PARAMBOX: heading index = %d, owner = %u, heading name = %s\n",myh,owner,headings[myh].name);
+			heb = new HeadingBox(myh);
+			print("PARAMBOX: hosing myself...\n");
+			while (this.get_first_child() != null) { this.get_first_child().destroy(); }
+			print("PARAMBOX: i am hosed.\n");
+			this.append(heb);
+			print("PARAMBOX: header added.\n");
+			for (int e = 0; e < headings[myh].elements.length; e++) {
+				print("PARAMBOX: checking element %s for type....\n",headings[myh].elements[e].name);
+				if (headings[myh].elements[e].type != null) {
+					switch (headings[myh].elements[e].type) {
+						case "paragraph" : ebpara = new ParagraphBox(e); this.append(ebpara); break;
+						//case "propertydrawer" : ebprop = new PropbinBox(e); this.append(ebprop); break;
+						//case "srcblock" : ebsrcb = new SrcblockBox(e); this.append(ebsrcb); break;
+						//case "example" : ebxmpb = new ExampleBox(e); this.append(ebxmpb); break;
+						//case "table" : ebtblb = new TableBox(e); this.append(ebtblb); break;
+						//case "comandtag" : ebcmdt = new CmdtagBox(e); this.append(ebcmdt); break;
+						//case "nametag" : ebnomt = new NametagBox(e); this.append(ebnomt); break;
+						default : break;
+					}
+				}
+			}
+		}
+	}
+	public ParamBox(uint o) {
+		print("PARAMBOX: created...\n");
+		owner = o;
+		this.set_orientation(VERTICAL);
+		this.spacing = 10;
+		this.vexpand = false;
+		print("PARAMBOX: headings.length = %d, owner = %u, sel = %u\n",headings.length,owner,sel);
+		if (headings.length > 0) {
+			updateme(o);
+		}	
+	}
+}
+
+public class ModalBox : Gtk.Box {
+	private Gtk.Box content;
+	private Gtk.Box control;
+	private Gtk.Box typelistpopbox;
+	private Gtk.Popover typelistpop;
+	private Gtk.MenuButton typelistbutton;
+	private Gtk.ScrolledWindow typpopscroll;
+	private Gtk.GestureClick typelistclick;
+	public ModalBox (int typ) {
+		print("MODALBOX: created...\n");
+// typ 0 = outliner
+// typ 1 = parameters
+// typ 2 = nodegraph
+// typ 3 = processgraph
+// typ 4 = timeline
+		this.set_orientation(VERTICAL);
+		this.spacing = 10;
+		this.vexpand = false;
+		content = new Gtk.Box(VERTICAL,0);
+		control = new Gtk.Box(HORIZONTAL,0);
+		content.vexpand = true;
+		control.hexpand = false;
+		control.margin_top = 10;
+		control.margin_end = 10;
+		control.margin_start = 10;
+		control.margin_bottom = 10;
+
+		typelistbutton = new Gtk.MenuButton();
+		typelistpop = new Gtk.Popover();
+		typelistpopbox = new Gtk.Box(VERTICAL,2);
+		typpopscroll = new Gtk.ScrolledWindow();
+
+		foreach (string s in paneltypes) {
+			Gtk.Button muh = new Gtk.Button.with_label (s);
+			typelistpopbox.append(muh);
+			muh.clicked.connect ((buh) => {
+				if (buh.label == "Parameters") {
+					while (content.get_first_child() != null) { content.get_first_child().destroy(); }
+					print("MODALBOX: adding parameter pane to content...\n");
+					content.append(new ParamBox(sel));
+					typelistpop.popdown();
+				}
+			});
+		}
+		typelistbutton.icon_name = "document-open-symbolic";
+		typelistpopbox.margin_top = 5;
+		typelistpopbox.margin_end = 5;
+		typelistpopbox.margin_start = 5;
+		typelistpopbox.margin_bottom = 5;
+		typpopscroll.set_child(typelistpopbox);
+		typelistpop.width_request = 300;
+		//int wwx, wwy = 0;
+		//frownwin.get_default_size(out wwx,out wwy);
+		typelistpop.height_request = 200;
+		typelistpop.set_child(typpopscroll);
+		typelistbutton.popover = typelistpop;
+		typelistpop.set_position(TOP);
+		typelistclick = new Gtk.GestureClick();
+		typelistbutton.add_controller(typelistclick);
+		typelistclick.pressed.connect(() => {
+			print("typelist selected\n");
+		});
+
+		control.append(typelistbutton);
+
+		this.append(content);
+		this.append(control);
+	}
+}
+
+
+public class frownwin : Gtk.ApplicationWindow {
+
+	public frownwin (Gtk.Application frownedupon) {Object (application: frownedupon);}
+	construct {
+
+		paneltypes = {"Outliner", "Parameters", "NodeGraph", "ProcessGraph", "TimeLine"};
+
+// named colors
+
+		string pagebg = "#6B3521FF";		// zn orange
+		string pagefg = "#BD4317FF";
+		string artcbg = "#112633FF";		// sb blue
+		string artcfg = "#1A3B4FFF";
+
+		string bod_hi = "#5FA619FF";		// green
+		string bod_lo = "#364F1DFF";
+
+		string tal_hi = "#14A650FF";		// turqoise
+		string tal_lo = "#1D5233FF";
+
+		string sbbackground = "#112633FF";	// sb blue
+		string sbselect = "#327299FF";
+		string sblines = "#08131AFF";
+		string sblight = "#19394DFF";
+		string sbshade = "#0C1D26FF";
+		string sbentry = "#0E232EFF";
+
+		string out_hi = "#8738A1FF";		// purple
+		string out_lo = "#351C3DFF";
+
+// interaction states
+
+		int winx = 0;
+		int winy = 0;
+		doup = false;
+
+// graph memory
+
+
+// window
+
+		this.title = "frownedupon";
+		this.close_request.connect((e) => { return false; });
+
+// header
+
+		Gtk.Label titlelabel = new Gtk.Label("frownedupon");
+		Gtk.HeaderBar iobar = new Gtk.HeaderBar();
+		iobar.show_title_buttons = false;
+		iobar.set_title_widget(titlelabel);
+		this.set_titlebar(iobar);
+		this.set_default_size(360, (720 - 46));
+		
+// headerbr buttons
+
+		Gtk.MenuButton savemenu = new Gtk.MenuButton();
+		Gtk.MenuButton loadmenu = new Gtk.MenuButton();
+
+		Gtk.GestureClick loadmenuclick = new Gtk.GestureClick();
+		loadmenu.add_controller(loadmenuclick);
+
+		savemenu.icon_name = "document-save-symbolic";
+		loadmenu.icon_name = "document-open-symbolic";
+
+		Gtk.Button savebutton = new Gtk.Button.with_label("save");
+		Gtk.Popover savepop = new Gtk.Popover();
+		Gtk.Popover loadpop = new Gtk.Popover();
+		Gtk.Box savepopbox = new Gtk.Box(VERTICAL,5);
+		Gtk.Box loadpopbox = new Gtk.Box(VERTICAL,5);
+		savepopbox.margin_end = 5;
+		savepopbox.margin_top = 5;
+		savepopbox.margin_start = 5;
+		savepopbox.margin_bottom = 5;
+		loadpopbox.margin_end = 5;
+		loadpopbox.margin_top = 5;
+		loadpopbox.margin_start = 5;
+		loadpopbox.margin_bottom = 5;
+		saveentry = new Gtk.Entry();
+		saveentry.text = "default";
+		savepopbox.append(saveentry);
+		savepopbox.append(savebutton);
+		savepop.set_child(savepopbox);
+		loadpop.set_child(loadpopbox);
+		savemenu.popover = savepop;
+		loadmenu.popover = loadpop;
+		iobar.pack_start(loadmenu);
+		iobar.pack_end(savemenu);
+
+// load
+
+		loadmenuclick.pressed.connect(() => {
+			if (doup) {
+				doup = false;
+				while (loadpopbox.get_first_child() != null) {
+					//loadpopbox.remove(loadpopbox.get_first_child());
+					loadpopbox.get_first_child().destroy();
+				}
+				print("LOAD: button pressed...\n");
+				var pth = GLib.Environment.get_current_dir();
+				bool allgood = true;
+				GLib.Dir dcr = null;
+				try { dcr = Dir.open (pth, 0); } catch (Error e) { print("%s\n",e.message); allgood = false; }
+				if (allgood) {
+					string? name = null;
+					print("LOAD: searching for org files in %s\n",((string) pth));
+					while ((name = dcr.read_name ()) != null) {
+						var exts = name.split(".");
+						if (exts.length == 2) {
+							print("LOAD:\tchecking file: %s\n", name);
+							if (exts[1] == "org") {
+								Gtk.Button muh = new Gtk.Button.with_label (name);
+								loadpopbox.append(muh);
+								muh.clicked.connect ((buh) => {
+									if (buh.label.strip() != "") {
+										print("LOAD:\t\tloading %s...\n",buh.label);
+										loadmemyorg(buh.label.strip());
+										if (headings.length > 0) {
+											restartui(0);
+										} else { print("LOAD: failed to load any headings...\n"); }
+									} else { print("LOAD: nothing to load, aborting.\n"); }
+									loadpop.popdown();
+								});
+							}
+						}
+					}
+				}
+				doup = true;
+			}			
+		});
+
+// initial containers
+
+		ModalBox panea = new ModalBox(0);
+		ModalBox paneb = new ModalBox(1);
+
+// toplevel ui
+
+		vdiv = new Gtk.Paned(VERTICAL);
+		vdiv.start_child = panea;
+		vdiv.end_child = paneb;
+		vdiv.wide_handle = true;
+		vdiv.set_shrink_end_child(false);
+
+// add to window
+
+		this.set_child(vdiv);
+		vdiv.position = 600;
+
+		doup = true;
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+///////////`                  //`     ///////` //`      //`     //////`                 /////
+//////////        ///////    //      ///////  //       //      //////     //////       /////  
+/////////        /////////////       `   //           //      //////     /////        /////  
+////////        /////////////      ///////////`      //      //////          `       /////  
+////////        `         //      ///////////       //      //////                 //////  
+/////////////////////`   //      ///////////       //      //////      /////////////////   
+////////////  //////    //      ///  // ///       //      /// //      ////  ///////////    
+///////////        `   //           //    `      //          //       `    ///////////      
+/////////////////////////////////////////////////////////////////////////////////////         
+                                                                                           
+                                                                                           
+
+
+// string sbbackground 	= "#112633FF";	// sb blue
+// string sbselect 		= "#327299FF";	// bright selection
+// string sblines 			= "#08131AFF";	// dark lines
+// string sblight 			= "#19394DFF";	// +5 background
+// string sbshade 			= "#0C1D26FF";	// -5 background
+// string sbentry 			= "#0E232EFF";	// -2 background
+
+// initialize
+
+// events
+
+// graph interaction
+
+
+///////////////////////////////
+//                           //
+//    node graph rendering   //
+//                           //
+///////////////////////////////
+	}
+}
+
+
+
+int main (string[] args) {
+	var app = new frownedupon();
+	app.activate.connect (() => {
+		var win = new frownwin(app);
+		win.present ();
+	});
+	return app.run (args);
 }
