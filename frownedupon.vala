@@ -1376,23 +1376,31 @@ public class OutputRow : Gtk.Box {
 	private Gtk.ToggleButton outputshowval;
 	private string oupcss;
 	private Gtk.CssProvider oupcsp;
-	private string ouvcss;
-	private Gtk.CssProvider ouvcsp;
+	//private string ouvcss;
+	//private Gtk.CssProvider ouvcsp;
 	private Gtk.TextTagTable outputvaltextbufftags;
 	private GtkSource.Buffer outputvaltextbuff;
 	private GtkSource.View outputvaltext;
 	private Gtk.ScrolledWindow outputvalscroll;
 	private Gtk.Box outputscrollbox;
+	private Gtk.Box outputsubrow;
+	private Gtk.TextTag outputvaltextbufftag;
+	private int[,] mydiffs;
 	private string evalmyparagraph(int h,int e,int o) {
 		// para eval goes here
 		string v = headings[h].elements[e].outputs[o].value;
+		int[,] tdif = new int[headings[h].elements[e].inputs.length,2];
 		for (int i = 0; i < headings[h].elements[e].inputs.length; i++) {
 			string k = headings[h].elements[e].inputs[i].defaultv;
 			string n = getmysourcevalbyid(headings[h].elements[e].inputs[i].source);
 			if (k != "" && n != "") {
+				int aa = v.index_of(k) + 1; //print("aa = %d\n",aa);
 				v = v.replace(k,n);
+				int bb = aa + (n.length + 1); //print("bb = %d\n",bb);
+				if (aa < bb) { tdif[i,0] = aa; tdif[i,1] = bb; }
 			}
 		}
+		mydiffs = tdif;
 		return v;
 	}
 	public OutputRow (int e, int idx) {
@@ -1400,11 +1408,15 @@ public class OutputRow : Gtk.Box {
 		if (idx < headings[hidx].elements[e].outputs.length) {
 			outputvar = new Gtk.Label(null);
 			outputvar.margin_start = 10;
+			outputvar.hexpand = true;
 			outputvar.set_text(headings[hidx].elements[e].outputs[idx].name);
-			outputcontainer = new Gtk.Box(HORIZONTAL,10);
+			outputcontainer = new Gtk.Box(VERTICAL,4);
+			outputcontainer.hexpand = true;
 
 // one-liners
 			if (headings[hidx].elements[e].type == "nametag" || headings[hidx].elements[e].type == "propdrawer") {
+				outputcontainer.set_orientation(HORIZONTAL);
+				outputcontainer.spacing = 10;
 				outputval = new Gtk.Entry();
 				outputval.set_text(headings[hidx].elements[e].outputs[idx].value);
 
@@ -1419,6 +1431,8 @@ public class OutputRow : Gtk.Box {
 
 // editable multiline text outputs
 			if (headings[hidx].elements[e].type == "paragraph" || headings[hidx].elements[e].type == "example") {
+				outputsubrow = new Gtk.Box(HORIZONTAL,10);
+				outputsubrow.append(outputvar);
 				outputscrollbox = new Gtk.Box(VERTICAL,10);
 				outputvalscroll = new Gtk.ScrolledWindow();
 				outputvalscroll.height_request = 200;
@@ -1428,46 +1442,80 @@ public class OutputRow : Gtk.Box {
 				outputvaltext.buffer.set_text(headings[hidx].elements[e].outputs[idx].value);
 				outputvaltext.accepts_tab = true;
 				outputvaltext.set_monospace(true);
+				outputvaltext.tab_width = 2;
+				outputvaltext.indent_on_tab = true;
+				outputvaltext.indent_width = 4;
+				outputvaltext.show_line_numbers = true;
+				outputvaltext.highlight_current_line = true;
+				outputvaltext.vexpand = true;
+				outputvaltext.hexpand = true;
+				outputvaltext.top_margin = 10;
+				outputvaltext.left_margin = 10;
+				outputvaltext.right_margin = 10;
+				outputvaltext.bottom_margin = 10;
+				outputvaltext.space_drawer.enable_matrix = true;
 				outputvaltextbuff.set_highlight_syntax(true);
+				outputvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("Adwaita-gifded"));
 
 // edit
 				outputvaltext.buffer.changed.connect(() => {
-					headings[hidx].elements[e].outputs[idx].value = outputvaltext.buffer.text;
+					if (doup) {
+						headings[hidx].elements[e].outputs[idx].value = outputvaltext.buffer.text;
+					}
 				});
-				outputvalscroll.set_child(outputvaltext);
-				outputscrollbox.append(outputvalscroll);
-				outputscrollbox.vexpand = true;
-				outputscrollbox.margin_top = 0;
-				outputscrollbox.margin_end = 0;
-				outputscrollbox.margin_start = 0;
-				outputscrollbox.margin_bottom = 0;
+
 
 // paragraph is a special case as it may require eval, but isn't a param that creates an output like srcblock...
-				if (headings[hidx].elements[e].type != "paragraph") {
+				if (headings[hidx].elements[e].type == "paragraph") {
+					print("OUTPUTROW:\tadding paragraph eval button...\n");
 					outputshowval = new Gtk.ToggleButton();
 					outputshowval.icon_name = "user-invisible";
-					ouvcsp = new Gtk.CssProvider();
-					ouvcss = ".xx { background: #00FFFF20; }";
-					ouvcsp.load_from_data(ouvcss.data);
-					outputvaltext.get_style_context().add_provider(ouvcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
-					outputvaltext.get_style_context().add_class("xx");
+					//ouvcsp = new Gtk.CssProvider();
+					//ouvcss = ".xx { background: #00FFFF20; }";
+					//ouvcsp.load_from_data(ouvcss.data);
+					//outputvaltext.get_style_context().add_provider(ouvcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+					//outputvaltext.get_style_context().add_class("xx");
 					outputshowval.toggled.connect(() => {
+						doup = false;
 						if (outputshowval.active) {
 							string outval = evalmyparagraph(hidx,e,idx);
 							outputvaltext.buffer.set_text("(%s)".printf(outval));
 							outputshowval.icon_name = "user-available";
-							ouvcss = ".xx { background: #FF000020; }"; ouvcsp.load_from_data(ouvcss.data);
+							//outputvaltextbuff.remove_tag_by_name();
+							for (int d = 0; d < mydiffs.length[0]; d++) {
+								Gtk.TextTag rg = outputvaltextbufftags.lookup("difftag_%d".printf(d));
+								if (rg != null) { outputvaltextbufftags.remove(rg); }
+								Gtk.TextTag tg  = new Gtk.TextTag("difftag_%d".printf(d));
+								tg.background = "#00FF0030";
+								outputvaltextbufftags.add(tg);
+								Gtk.TextIter ss = new Gtk.TextIter();
+								Gtk.TextIter ee = new Gtk.TextIter();
+								outputvaltextbuff.get_iter_at_offset(out ss,mydiffs[d,0]);
+								outputvaltextbuff.get_iter_at_offset(out ee,mydiffs[d,1]);
+								outputvaltextbuff.apply_tag_by_name("difftag_%d".printf(d), ss, ee);
+								print("OUTPUTROW:\t\thighlighting tag from %d to %d...\n",mydiffs[d,0],mydiffs[d,1]);
+							}
+							//ouvcss = ".xx { background: #FF000020; }"; ouvcsp.load_from_data(ouvcss.data);
 						} else {
 							outputvaltext.buffer.set_text(headings[hidx].elements[e].outputs[idx].value);
-							ouvcss = ".xx { background: #00FFFF20; }"; ouvcsp.load_from_data(ouvcss.data);
+							//ouvcss = ".xx { background: #00FFFF20; }"; ouvcsp.load_from_data(ouvcss.data);
 							outputshowval.icon_name = "user-invisible";
 						}
+						doup = true;
 					});
-					outputcontainer.append(outputshowval);
+					outputsubrow.append(outputshowval);
 				}
+				outputvalscroll.set_child(outputvaltext);
+				outputscrollbox.append(outputvalscroll);
+				outputscrollbox.vexpand = true;
+				outputscrollbox.margin_top = 10;
+				outputscrollbox.margin_end = 10;
+				outputscrollbox.margin_start = 10;
+				outputscrollbox.margin_bottom = 10;
+				outputcontainer.append(outputsubrow);
 				outputcontainer.append(outputscrollbox);
 			}
-			outputcontainer.vexpand = true;
+			outputcontainer.vexpand = false;
 			outputcontainer.margin_top = 4;
 			outputcontainer.margin_start = 4;
 			outputcontainer.margin_end = 4;
@@ -1478,14 +1526,14 @@ public class OutputRow : Gtk.Box {
 				print("add output overrides here\n");
 			}
 			oupcsp = new Gtk.CssProvider();
-			oupcss = ".xx { background: #FF101020; box-shadow: 2px 2px 2px #00000066; }";
+			oupcss = ".xx { background: #FF000010; box-shadow: 2px 2px 2px #00000066; }";
 			oupcsp.load_from_data(oupcss.data);
 			this.get_style_context().add_provider(oupcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			this.get_style_context().add_class("xx");
-			this.margin_top = 10;
+			this.margin_top = 0;
 			this.margin_start = 10;
 			this.margin_end = 10;
-			this.margin_bottom = 10;
+			this.margin_bottom = 0;
 			this.append(outputcontainer);
 		}
 	}
@@ -1533,25 +1581,25 @@ public class InputRow : Gtk.Box {
 			inputcontainer.append(inputvar);
 			inputcontainer.append(inputdefvar);
 			inputcontainer.append(inputshowval);
-			inputcontainer.vexpand = true;
-			inputcontainer.margin_top = 4;
-			inputcontainer.margin_start = 4;
-			inputcontainer.margin_end = 4;
-			inputcontainer.margin_bottom = 4;
+			inputcontainer.vexpand = false;
+			inputcontainer.margin_top = 5;
+			inputcontainer.margin_start = 5;
+			inputcontainer.margin_end = 5;
+			inputcontainer.margin_bottom = 5;
 
 // some elements can't edit inputs here
 			if (headings[hidx].elements[e].type != "paragraph" && headings[hidx].elements[e].type != "table") {
 				print("add input overrides here\n");
 			}
 			inpcsp = new Gtk.CssProvider();
-			inpcss = ".xx { background: #ffDD8820; box-shadow: 2px 2px 2px #00000066; }";
+			inpcss = ".xx { background: #00FF0010; box-shadow: 2px 2px 2px #00000066; }";
 			inpcsp.load_from_data(inpcss.data);
 			this.get_style_context().add_provider(inpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			this.get_style_context().add_class("xx");
-			this.margin_top = 10;
+			this.margin_top = 0;
 			this.margin_start = 10;
 			this.margin_end = 10;
-			this.margin_bottom = 10;
+			this.margin_bottom = 0;
 			this.append(inputcontainer);
 		}
 	}
@@ -1559,8 +1607,13 @@ public class InputRow : Gtk.Box {
 
 public class ParagraphBox : Gtk.Box {
 	private Gtk.Box parabox;
+	private Gtk.Box paratitlebar;
+	private Gtk.Label paratitlelabel;
+	private Gtk.Box paragrip;
+	private Gtk.Box paranamebar;
 	private Gtk.Entry paraname;
 	private Gtk.Label paranamelabel;
+	private Gtk.ToggleButton parafoldbutton;
 	private Gtk.Box parainputbox;
 	private Gtk.Box parainputcontrolbox;
 	private Gtk.Label parainputlabel;
@@ -1575,22 +1628,66 @@ public class ParagraphBox : Gtk.Box {
 	private Gtk.CssProvider oupcsp;
 	private string parcss;
 	private Gtk.CssProvider parcsp;
-	private Gtk.Box paraminputlistbox;
-	private Gtk.Box paramoutputlistbox;
+	private string grpcss;
+	private Gtk.CssProvider grpcsp;
+	private Gtk.Box parainputlistbox;
+	private Gtk.Box paraoutputlistbox;
 	public ParagraphBox (int idx) {
 		print("PARAGRAPHBOX: started (%d)\n",idx);
 		if (idx < headings[hidx].elements.length) {
 			if (headings[hidx].elements[idx].type != null && headings[hidx].elements[idx].type == "paragraph") {
 				print("PARAGRAPHBOX:\tfound a paragraph element: %s\n",headings[hidx].elements[idx].name);
-				parabox = new Gtk.Box(VERTICAL,10);
+				parabox = new Gtk.Box(VERTICAL,4);
+				paratitlebar = new Gtk.Box(HORIZONTAL,0);
+				paratitlebar.margin_top = 5;
+				paratitlebar.margin_bottom = 5;
+				paratitlebar.margin_start = 5;
+				paratitlebar.margin_end = 5;
+				paragrip = new Gtk.Box(HORIZONTAL,0);
+				paragrip.hexpand = true;
+				grpcsp = new Gtk.CssProvider();
+				grpcss = ".xx { background: #00000010; }";
+				grpcsp.load_from_data(grpcss.data);
+				paragrip.get_style_context().add_provider(grpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paragrip.get_style_context().add_class("xx");
+				paratitlelabel = new Gtk.Label("Paragraph");
+				paratitlelabel.hexpand = true;
+				paragrip.append(paratitlelabel);
+				paratitlebar.append(paragrip);
+				paranamebar = new Gtk.Box(HORIZONTAL,10);
 				paranamelabel = new Gtk.Label("Name:");
 				paraname = new Gtk.Entry();
-				parabox.append(paraname);
+				paranamelabel.margin_start = 10;
+				parafoldbutton = new Gtk.ToggleButton();
+				parafoldbutton.icon_name = "go-up";
+				paranamebar.append(paranamelabel);
+				paranamebar.append(paraname);
+				paratitlebar.append(parafoldbutton);
+				paranamebar.margin_top = 5;
+				paranamebar.margin_bottom = 10;
+				paranamebar.margin_start = 10;
+				paranamebar.margin_end = 5;
+				parafoldbutton.toggled.connect(() => {
+					if (parafoldbutton.active) {
+						parafoldbutton.icon_name = "go-down";
+						parabox.visible = false;
+					} else {
+						parafoldbutton.icon_name = "go-up";
+						parabox.visible = true;
+					}
+				});
+				paraname.hexpand = true;
+				this.append(paratitlebar);
+				parabox.append(paranamebar);
 				paraname.text = headings[hidx].elements[idx].name;
 				if (headings[hidx].elements[idx].inputs.length > 0) {
 					parainputbox = new Gtk.Box(VERTICAL,4);
-					parainputcontrolbox = new Gtk.Box(HORIZONTAL,10);
-					paraminputlistbox = new Gtk.Box(VERTICAL,0);
+					parainputcontrolbox = new Gtk.Box(HORIZONTAL,4);
+					parainputlistbox = new Gtk.Box(VERTICAL,0);
+					parainputlistbox.margin_top = 0;
+					parainputlistbox.margin_bottom = 10;
+					parainputlistbox.margin_start = 0;
+					parainputlistbox.margin_end = 0;
 					parainputlabel = new Gtk.Label("Inputs");
 					parainputlabel.margin_start = 10;
 					parainputlabel.hexpand = true;
@@ -1599,38 +1696,46 @@ public class ParagraphBox : Gtk.Box {
 					parainputfoldbutton.toggled.connect(() => {
 						if (parainputfoldbutton.active) {
 							parainputfoldbutton.icon_name = "go-down";
-							paraminputlistbox.visible = false;
+							parainputlistbox.visible = false;
 						} else {
 							parainputfoldbutton.icon_name = "go-up";
-							paraminputlistbox.visible = true;
+							parainputlistbox.visible = true;
 						}
 					});
 					parainputcontrolbox.append(parainputlabel);
 					parainputcontrolbox.append(parainputfoldbutton);
 					parainputbox.append(parainputcontrolbox);
-					parainputbox.append(paraminputlistbox);
+					parainputbox.append(parainputlistbox);
 					parainputcontrolbox.margin_top = 10;
 					parainputcontrolbox.margin_bottom = 10;
 					parainputcontrolbox.margin_start = 10;
 					parainputcontrolbox.margin_end = 10;
 					inpcsp = new Gtk.CssProvider();
-					inpcss = ".xx { background: #88DDFF20; box-shadow: 2px 2px 2px #00000066; }";
+					inpcss = ".xx { background: #00FF0010; box-shadow: 2px 2px 2px #00000066; }";
 					inpcsp.load_from_data(inpcss.data);
 					parainputbox.get_style_context().add_provider(inpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 					parainputbox.get_style_context().add_class("xx");
 					print("PARAGRAPHBOX:\tfetching %d inputs...\n",headings[hidx].elements[idx].inputs.length);
 					for (int i = 0; i < headings[hidx].elements[idx].inputs.length; i++) {
 						InputRow parainputrow = new InputRow(idx,i);
-						paraminputlistbox.append(parainputrow);
+						parainputlistbox.append(parainputrow);
 					}
-					paraminputlistbox.hexpand = true;
+					parainputlistbox.hexpand = true;
 					parainputbox.hexpand = true;
+					parainputbox.margin_top = 0;
+					parainputbox.margin_bottom = 10;
+					parainputbox.margin_start = 0;
+					parainputbox.margin_end = 0;
 					parabox.append(parainputbox);
 				}
 				if (headings[hidx].elements[idx].outputs.length > 0) {
 					paraoutputbox = new Gtk.Box(VERTICAL,4);
 					paraoutputcontrolbox = new Gtk.Box(HORIZONTAL,10);
-					paramoutputlistbox = new Gtk.Box(VERTICAL,0);
+					paraoutputlistbox = new Gtk.Box(VERTICAL,0);
+					paraoutputlistbox.margin_top = 0;
+					paraoutputlistbox.margin_bottom = 10;
+					paraoutputlistbox.margin_start = 0;
+					paraoutputlistbox.margin_end = 0;
 					paraoutputlabel = new Gtk.Label("Outputs");
 					paraoutputlabel.margin_start = 10;
 					paraoutputlabel.hexpand = true;
@@ -1639,42 +1744,43 @@ public class ParagraphBox : Gtk.Box {
 					paraoutputfoldbutton.toggled.connect(() => {
 						if (paraoutputfoldbutton.active) {
 							paraoutputfoldbutton.icon_name = "go-down";
-							paramoutputlistbox.visible = false;
+							paraoutputlistbox.visible = false;
 						} else {
 							paraoutputfoldbutton.icon_name = "go-up";
-							paramoutputlistbox.visible = true;
+							paraoutputlistbox.visible = true;
 						}
 					});
 					paraoutputcontrolbox.append(paraoutputlabel);
 					paraoutputcontrolbox.append(paraoutputfoldbutton);
 					paraoutputbox.append(paraoutputcontrolbox);
-					paraoutputbox.append(paramoutputlistbox);
+					paraoutputbox.append(paraoutputlistbox);
 					paraoutputcontrolbox.margin_top = 10;
 					paraoutputcontrolbox.margin_bottom = 10;
 					paraoutputcontrolbox.margin_start = 10;
 					paraoutputcontrolbox.margin_end = 10;
 					oupcsp = new Gtk.CssProvider();
-					oupcss = ".xx { background: #88DDFF20; box-shadow: 2px 2px 2px #00000066; }";
+					oupcss = ".xx { background: #FF000010; box-shadow: 2px 2px 2px #00000066; }";
 					oupcsp.load_from_data(oupcss.data);
 					paraoutputbox.get_style_context().add_provider(oupcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 					paraoutputbox.get_style_context().add_class("xx");
 					print("PARAGRAPHBOX:\tfetching %d outputs...\n",headings[hidx].elements[idx].outputs.length);
 					for (int i = 0; i < headings[hidx].elements[idx].outputs.length; i++) {
 						OutputRow paraoutputrow = new OutputRow(idx,i);
-						paramoutputlistbox.append(paraoutputrow);
+						paraoutputlistbox.append(paraoutputrow);
 					}
-					paramoutputlistbox.hexpand = true;
+					paraoutputlistbox.hexpand = true;
 					paraoutputbox.hexpand = true;
 					parabox.append(paraoutputbox);
 				}
-				parabox.margin_top = 10;
+				parabox.margin_top = 5;
 				parabox.margin_bottom = 10;
 				parabox.margin_start = 10;
-				parabox.margin_end = 10;
+				parabox.margin_end = 20;
 				parabox.hexpand = true;
 				parcsp = new Gtk.CssProvider();
-				parcss = ".xx { background: #88888820; box-shadow: 2px 2px 2px #00000066; }";
+				parcss = ".xx { background: #00DDFF10; box-shadow: 2px 2px 2px #00000066; }";
 				parcsp.load_from_data(parcss.data);
+				this.set_orientation(VERTICAL);
 				this.get_style_context().add_provider(parcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				this.get_style_context().add_class("xx");
 				this.margin_top = 10;
@@ -1738,6 +1844,8 @@ public class HeadingBox : Gtk.Box {
 }
 
 public class ParamBox : Gtk.Box {
+	private Gtk.Box pbox;
+	private Gtk.ScrolledWindow pscroll;
 	private HeadingBox heb;
 	public uint owner;
 	private ParagraphBox ebpara;
@@ -1750,18 +1858,23 @@ public class ParamBox : Gtk.Box {
 			if (headings[i].id == h) { myh = i; hidx = i; break; } 
 		}
 		if (myh != -1) {
+			pscroll = new Gtk.ScrolledWindow();
+			pbox = new Gtk.Box(VERTICAL,10);
+			pbox.hexpand = true;
+			pbox.vexpand = true;
+			pscroll.set_child(pbox);
 			print("PARAMBOX: heading index = %d, owner = %u, heading name = %s\n",myh,owner,headings[myh].name);
 			heb = new HeadingBox(myh);
 			print("PARAMBOX: hosing myself...\n");
 			while (this.get_first_child() != null) { this.get_first_child().destroy(); }
 			print("PARAMBOX: i am hosed.\n");
-			this.append(heb);
+			pbox.append(heb);
 			print("PARAMBOX: header added.\n");
 			for (int e = 0; e < headings[myh].elements.length; e++) {
 				print("PARAMBOX: checking element %s for type....\n",headings[myh].elements[e].name);
 				if (headings[myh].elements[e].type != null) {
 					switch (headings[myh].elements[e].type) {
-						case "paragraph" : ebpara = new ParagraphBox(e); this.append(ebpara); break;
+						case "paragraph" : ebpara = new ParagraphBox(e); pbox.append(ebpara); break;
 						//case "propertydrawer" : ebprop = new PropbinBox(e); this.append(ebprop); break;
 						//case "srcblock" : ebsrcb = new SrcblockBox(e); this.append(ebsrcb); break;
 						//case "example" : ebxmpb = new ExampleBox(e); this.append(ebxmpb); break;
@@ -1772,6 +1885,7 @@ public class ParamBox : Gtk.Box {
 					}
 				}
 			}
+			this.append(pscroll);
 		}
 	}
 	public ParamBox(uint o) {
@@ -1779,7 +1893,8 @@ public class ParamBox : Gtk.Box {
 		owner = o;
 		this.set_orientation(VERTICAL);
 		this.spacing = 10;
-		this.vexpand = false;
+		this.vexpand = true;
+		this.hexpand = true;
 		print("PARAMBOX: headings.length = %d, owner = %u, sel = %u\n",headings.length,owner,sel);
 		if (headings.length > 0) {
 			updateme(o);
