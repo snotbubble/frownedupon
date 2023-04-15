@@ -160,6 +160,16 @@ int[] getmysourcepathbyname (string n) {
 	return {0};
 }
 
+string getheadingnamebyid (uint n) {
+	for (int h = 0; h < headings.length; h++) {
+		if (headings[h].id == n) { 
+			if (headings[h].name != null) { return headings[h].name; }
+		}
+	}
+	return "";
+}
+
+
 void crosslinkeverything () {
 	for (int h = 0; h < headings.length; h++) {
 		for (int e = 0; e < headings[h].elements.length; e++) {
@@ -1632,6 +1642,12 @@ public class ParagraphBox : Gtk.Box {
 	private Gtk.CssProvider grpcsp;
 	private Gtk.Box parainputlistbox;
 	private Gtk.Box paraoutputlistbox;
+	private Gtk.DragSource paradragsource;
+	private Gtk.DropTarget paradroptarg;
+	private int dox;
+	private int doy;
+	private string name;
+	//private  Gtk.DropControllerMotion paradropmo;
 	public ParagraphBox (int idx) {
 		print("PARAGRAPHBOX: started (%d)\n",idx);
 		if (idx < headings[hidx].elements.length) {
@@ -1650,7 +1666,7 @@ public class ParagraphBox : Gtk.Box {
 				grpcsp.load_from_data(grpcss.data);
 				paragrip.get_style_context().add_provider(grpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				paragrip.get_style_context().add_class("xx");
-				paratitlelabel = new Gtk.Label("Paragraph");
+				paratitlelabel = new Gtk.Label("Paragraph: %s".printf(headings[hidx].elements[idx].name));
 				paratitlelabel.hexpand = true;
 				paragrip.append(paratitlelabel);
 				paratitlebar.append(paragrip);
@@ -1680,6 +1696,7 @@ public class ParagraphBox : Gtk.Box {
 				this.append(paratitlebar);
 				parabox.append(paranamebar);
 				paraname.text = headings[hidx].elements[idx].name;
+				this.name = paraname.text;
 				if (headings[hidx].elements[idx].inputs.length > 0) {
 					parainputbox = new Gtk.Box(VERTICAL,4);
 					parainputcontrolbox = new Gtk.Box(HORIZONTAL,4);
@@ -1780,6 +1797,56 @@ public class ParagraphBox : Gtk.Box {
 				parcsp = new Gtk.CssProvider();
 				parcss = ".xx { background: #00DDFF10; box-shadow: 2px 2px 2px #00000066; }";
 				parcsp.load_from_data(parcss.data);
+				//alc = new Gtk.Allocation();
+				paradragsource = new Gtk.DragSource();
+				paradragsource.set_actions(Gdk.DragAction.MOVE);
+				paradragsource.prepare.connect((source, x, y) => {
+					dox = (int) x;
+					doy = (int) y;
+					//print("dragsource triggered...\n");
+					return new Gdk.ContentProvider.for_value(this);
+				});
+				paradragsource.drag_begin.connect((source,drag) => {
+					print("draggin...\n");
+					Gtk.WidgetPaintable mm = new Gtk.WidgetPaintable(this);
+					source.set_icon(mm,dox,doy);
+				});
+				//paradropmo = new Gtk.DropControllerMotion();
+				//this.add_controller(paradropmo);
+				//paradropmo.motion.connect((x,y) => {
+				//	
+				//});
+				paradragsource.drag_end.connect(() => {
+					print("droppin...\n");
+					//return true;
+				});
+				paradragsource.drag_cancel.connect(() => {
+					print("not draggin...\n");
+					return true;
+				});
+
+				this.add_controller(paradragsource);
+				paradroptarg = new Gtk.DropTarget(typeof (ParagraphBox),Gdk.DragAction.MOVE);
+				paradroptarg.on_drop.connect((value,x,y) => {
+					print("\tdroptargin...\n");
+					var tw = (ParagraphBox) value;
+					var pw = this;
+					print("droptargin\t\tmy name is: %s\n",pw.name);
+					print("droptargin\t\tthe dropped paragraph name is: %s\n",tw.name);
+					Gtk.Allocation alc = new Gtk.Allocation();
+					pw.get_allocation(out alc);
+					if( tw == pw || tw == null) { print("not droptargin.\n"); return false; } 
+					var lbx = (Gtk.Box) tw.parent;
+					print("droptargin\t\tmy container is %s\n",lbx.parent.parent.name);
+					print("droptargin\t\tmouse y is: %f, my height is: %d\n",y,alc.height);
+					if ( y < (alc.height / 2)) {
+						print("droptargin\t\t\treordering...\n");
+						lbx.reorder_child_after(pw,tw);
+					}
+					return true;
+				});
+				this.add_controller(paradroptarg);
+				//paradroptarg.preload = true;
 				this.set_orientation(VERTICAL);
 				this.get_style_context().add_provider(parcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				this.get_style_context().add_class("xx");
@@ -1848,6 +1915,7 @@ public class ParamBox : Gtk.Box {
 	private Gtk.ScrolledWindow pscroll;
 	private HeadingBox heb;
 	public uint owner;
+	public string name;
 	private ParagraphBox ebpara;
 	public void updateme (uint h){
 		print("PARAMBOX.UPDATEME: started...\n");
@@ -1891,6 +1959,7 @@ public class ParamBox : Gtk.Box {
 	public ParamBox(uint o) {
 		print("PARAMBOX: created...\n");
 		owner = o;
+		this.name = "%s_elements".printf(getheadingnamebyid(o));
 		this.set_orientation(VERTICAL);
 		this.spacing = 10;
 		this.vexpand = true;
