@@ -3,7 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: the riddle of drag'n'drop...
+// status: boxception...
 
 
 using GLib;
@@ -96,8 +96,11 @@ int			hidx;			// header list index of selected item (volatile)
 string[]		paneltypes;
 Gtk.Entry		saveentry;		// save file feeld
 Gtk.Paned		vdiv;			// needed for reflow, resize, etc.
-Gtk.ScrolledWindow	pbsw;		// parameter container
-ParamBox			pbswp;		// parent of the above
+//Gtk.ScrolledWindow	pbsw;		// parameter container
+//ParamBox			pbswp;		// parent of the above
+//Gtk.Box			opane;		// output box containing a sourceview
+// default theme colors
+
 string sbbkg;	// sb blue
 string sbsel;
 string sblin;
@@ -205,19 +208,49 @@ int findtodobyname (string n, todo[] h) {
 	return h.length;
 }
 
-int findpribyname (string n, priority[] h) {
+uint findtodoidbyname (string n, todo[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (h[q].name == n) { return h[q].id; }
+	}
+	return -1;
+}
+
+uint findpriorityidbyname (string n, priority[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (h[q].name == n) { return h[q].id; }
+	}
+	return -1;
+}
+
+int findprioritybyname (string n, priority[] h) {
 	for (int q = 0; q < h.length; q++) {
 		if (h[q].name == n) { return q; }
 	}
 	return h.length;
 }
 
-int findtagbyname (string n, tag[] h) {
+int findtagindexbyname (string n, tag[] h) {
 	for (int q = 0; q < h.length; q++) {
 		if (h[q].name == n) { return q; }
 	}
 	return h.length;
 }
+
+string findtagnamebyid (uint t, tag[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (h[q].id == t) { return h[q].name; }
+	}
+	return "";
+}
+
+
+uint findtagidbyname (string n, tag[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (h[q].name == n) { return h[q].id; }
+	}
+	return -1;
+}
+
 
 bool notinuintarray (uint n, uint[] h) {
 	for (int q = 0; q < h.length; q++) {
@@ -254,13 +287,97 @@ bool notintodonames (string n, todo[] h) {
 	return true;
 }
 
+uint[] removeidfromtags(uint t, uint[] a) {
+	uint[] tmp = new uint[(a.length - 1)];
+	for (int j = 0; j < a.length; j++) {
+		if (a[j] == t) { 
+			for (int i = 0; i < a.length; i++) {
+				if (a[i] != t) {
+					tmp += a[i];
+					if (tmp.length == (a.length - 1)) { return tmp; }
+				}
+			}
+			return tmp;
+		}
+	}
+	uint[] o = {};
+	return o;
+}
+
+void toggleheadertagbyindex(int h, uint t) {
+	if (notinuintarray(t,headings[h].tags)) {
+		headings[h].tags += t;
+	} else {
+		headings[h].tags = removeidfromtags(t,headings[h].tags);
+	}
+}
+
+void addheadertotagsbyindex (int i, int h) {
+	for (int g = 0; g < tags.length; g++) {
+		uint[] tmp = {};
+		if (notinuintarray(tags[g].id,headings[h].tags)) {
+			for (int d = 0; d < tags[g].headings.length; d++) {
+				if (tags[g].headings[d] != headings[h].id) {
+					tmp += tags[g].headings[d];
+				}
+			}
+			tags[g].headings = tmp;
+		}
+	}
+	tags[i].headings += headings[h].id;
+}
+
+void addheadertoprioritiesbyindex (int i, uint x) {
+	for (int p = 0; p < priorities.length; p++) {
+		uint[] tmp = {};
+		for (int h = 0; h < priorities[p].headings.length; h++) {
+			if (priorities[p].headings[h] != x) {
+				tmp += priorities[p].headings[h];
+			}
+		}
+		if (priorities[p].headings.length != tmp.length) {
+			priorities[p].headings = tmp;
+			//for (int h = 0; h < priorities[p].headings.length; h++) {
+			//}
+		}
+	}
+	priorities[i].headings += x;
+}
+
+void addheadertotodosbyindex (int i, uint x) {
+	//print("todo array index: %d, header id: %u, todo.length: %d\n",i,x,todos.length);
+	for (int t = 0; t < todos.length; t++) {
+		//print("\tchecking todo[%d]: %s\n",t,todos[t].name);
+		uint[] tmp = {};
+		for (int h = 0; h < todos[t].headings.length; h++) {
+			//print("\t\tchecking todo[%d].headings[%d]: %u == %u\n",t,h,todos[t].headings[h],x);
+			if (todos[t].headings[h] != x) {
+				tmp += todos[t].headings[h];
+			}
+		}
+		if (todos[t].headings.length != tmp.length) {
+			todos[t].headings = tmp;
+			//for (int h = 0; h < todos[t].headings.length; h++) {
+				//print("\t\tchecking todo[%d].headings[%d]: %u == %u\n",t,h,todos[t].headings[h],x);
+			//}
+		}
+	}
+	todos[i].headings += x;
+}
+
+// TODO: check for conflicts
 uint makemeahash(string n, int t) {
 	//DateTime dd = new DateTime.now_local();
 	//print("MAKEMEAHASH: hashing %s_%d_%lld ...\n",n,t,GLib.get_real_time());
 	return "%s_%d_%lld".printf(n,t,GLib.get_real_time()).hash();
 }
 
-/* TODO:
+// TODO: uniquename
+//string makemeauniquename(string n) {
+//
+//}
+
+/* TODO: list input element ids to eval, from selected, in order of execution
 uint[] evalpath (uint[] nn, uint me) {
 	bool allgood = true;
 	int r = 0;
@@ -348,6 +465,8 @@ void printheadings (int ind) {
 	}
 }
 
+// org parsing, super tedious but has to be accurate
+
 int findexample (int l, int ind, string n) {
 	int64 xtts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
@@ -392,7 +511,6 @@ int findexample (int l, int ind, string n) {
 	return l;
 }
 
-// TODO: check foreign language
 int findparagraph (int l, int ind) {
 	int64 phtts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
@@ -1012,7 +1130,7 @@ int findheading (int l, int ind) {
 					aa.priority = pri.id;
 					priorities += pri;
 				} else {
-					int fpri = findpribyname(prn,priorities);
+					int fpri = findprioritybyname(prn,priorities);
 					if (fpri < priorities.length) {
 						aa.priority = priorities[fpri].id;
 					}
@@ -1050,7 +1168,7 @@ int findheading (int l, int ind) {
 								if (spew) { print("[%d]%s\t\t\tadding heading: %s, to new tag :%s:\n",l,tabs,aa.name,gg.name); }
 								tags += gg;
 							} else {
-								int ftag = findtagbyname(gpn,tags);
+								int ftag = findtagindexbyname(gpn,tags);
 								if (ftag < tags.length) { 
 									if (notinuintarray(tags[ftag].id, aa.tags)) {
 										if (spew) { print("[%d]%s\t\t\tadding existing tag :%s: to heading: %s\n",l,tabs,tags[ftag].name,aa.name); }
@@ -1188,6 +1306,9 @@ int findtodos (int l, int ind) {
 					string tds = lsp[t].strip();
 					if (tds != "") {
 						if(tds[0] == '[' && tds[(tds.length - 1)] == ']') {
+							for (int k = 0; k < todos.length; k++) {
+								if (todos[k].name == tds) { continue; }
+							}
 							if (spew) { print("[%d]%s\tfindtodos capturing a todo: %s...\n",l,tabs,tds);}
 							todo tt = todo();
 							tt.name = tds;
@@ -1291,7 +1412,7 @@ void loadmemyorg (string defile) {
 		}
 		if (sorg.strip() != "") {
 			print("loadmemyorg: clearing the arrays...\n");
-			/*
+
 			headings = {};
 			elements = {};
 			params = {};
@@ -1304,7 +1425,7 @@ void loadmemyorg (string defile) {
 			lines = {};
 			sel = -1;
 			hidx = 0;
-			*/
+
 			thisheading = -1;
 			print("loadmemyorg: headings.length   = %d\n",headings.length);
 			print("loadmemyorg: elements.length   = %d\n",elements.length);
@@ -1369,6 +1490,7 @@ void restartui(int ww) {
 	vdiv.get_first_child().destroy();
 	vdiv.get_last_child().destroy();
 	vdiv.start_child = panea;
+	panea.content.append(new ParamBox(sel));
 	vdiv.end_child = paneb;
 }
 
@@ -1564,23 +1686,27 @@ public class OutputRow : Gtk.Box {
 				outputcontainer.append(outputsubrow);
 				outputcontainer.append(outputscrollbox);
 				outputvalmaxi.toggled.connect(() => {
-				pbsw = (Gtk.ScrolledWindow) this.parent.parent.parent.parent.parent.parent.parent;
-				pbswp = (ParamBox) pbsw.parent;
+				//pbsw = (Gtk.ScrolledWindow) this.parent.parent.parent.parent.parent.parent.parent;
+				//pbswp = (ParamBox) pbsw.parent;
 // ModalBox/box(content)/ParamBox/scrolledWindow(pscroll)/box(pbox)/ParagraphBox/box(parabox)/box(paraoutputox)/box(paraoutputlistbox)/this.oututcontainer
 //                          ^            ^                                                                                                       ^
 //                       container     swapme                                                                                                  withme
 // targ = this.parent.parent.parent.parent.parent
 // src = this.outputcontainer
-					print("pbswp.name = %s\n",pbswp.name);
+					//print("pbswp.name = %s\n",pbswp.name);
 					if(outputvalmaxi.active) {
-						this.remove(outputcontainer);
-						pbswp.remove(pbsw);
-						pbswp.append(outputcontainer);
+						outputcontainer.unparent();
+						this.parent.parent.parent.parent.parent.parent.parent.set_visible(false);
+						//pbsw.set_visible(false);
+						//outputcontainer.set_parent(pbswp);
+						outputcontainer.set_parent(this.parent.parent.parent.parent.parent.parent.parent.parent);
 						outputvalmaxi.icon_name = "view-restore";
 					} else {
-						pbswp.remove(outputcontainer);
-						pbswp.append(pbsw);
-						this.append(outputcontainer);
+						outputcontainer.unparent();
+						//pbsw.set_visible(true);
+						this.parent.parent.parent.parent.parent.parent.parent.set_visible(true);
+						//pbsw.show();
+						outputcontainer.set_parent(this);
 						outputvalmaxi.icon_name = "view-fullscreen";	
 					}
 				});
@@ -1980,17 +2106,218 @@ public class TableBox : Gtk.Box {
 
 public class HeadingBox : Gtk.Box {
 	private Gtk.Box hbox;
-	private Gtk.Entry hname;
+	private Gtk.Entry headingname;
 	private string hedcss;
 	private Gtk.CssProvider hedcsp;
+	private string lblcss;
+	private Gtk.CssProvider lblcsp;
+	private string entcss;
+	private Gtk.CssProvider entcsp;
+	private string butcss;
+	private Gtk.CssProvider butcsp;
+	private Gtk.MenuButton headingtodobutton;
+	private Gtk.Popover headingtodopop;
+	private Gtk.Box headingtodopopbox;
+	private Gtk.ScrolledWindow headingtodopopscroll;
+	private Gtk.GestureClick headingtodobuttonclick;
+	private Gtk.MenuButton headingprioritybutton;
+	private Gtk.Popover headingprioritypop;
+	private Gtk.Box headingprioritypopbox;
+	private Gtk.ScrolledWindow headingprioritypopscroll;
+	private Gtk.GestureClick headingprioritybuttonclick;
+	private Gtk.MenuButton headingtagbutton;
+	private Gtk.Popover headingtagpop;
+	private Gtk.Box headingtagpopbox;
+	private Gtk.ScrolledWindow headingtagpopscroll;
+	private Gtk.GestureClick headingtagbuttonclick;
+	private Gtk.Label headingtaglist;
 	public HeadingBox (int idx) {
 		print("HEADINGBOX: started...\n");
 		if (idx < headings.length - 1) {
 			print("HEADINGBOX:\tmaking heading for: %s\n",headings[idx].name);
 			hbox = new Gtk.Box(HORIZONTAL,10);
-			hname = new Gtk.Entry();
-			hbox.append(hname);
-			hname.text = headings[idx].name;
+			headingname = new Gtk.Entry();
+			headingname.hexpand = true;
+			entcsp = new Gtk.CssProvider();
+			entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbshd,sbsel);
+			entcsp.load_from_data(entcss.data);
+			headingname.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
+			headingname.get_style_context().add_class("xx");
+			//headingnamelabel = new Gtk.Label("Paragraph: %s".printf(headings[hidx].elements[idx].name));
+			lblcsp = new Gtk.CssProvider();
+			lblcss = ".xx { color: %s; }".printf(sbsel);
+			lblcsp.load_from_data(lblcss.data);
+			//headingnamelabel.get_style_context().add_provider(lblcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			//headingnamelabel.get_style_context().add_class("xx");
+			//headingnamelabel.width_request = 100;
+			butcsp = new Gtk.CssProvider();
+			butcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sblit,sbsel);
+			butcsp.load_from_data(butcss.data);
+
+			headingprioritybutton = new Gtk.MenuButton();
+			headingprioritybutton.set_label("");
+			headingprioritypop = new Gtk.Popover();
+			headingprioritypopbox = new Gtk.Box(VERTICAL,0);
+			headingprioritypopscroll = new Gtk.ScrolledWindow();
+			headingprioritypopbox.margin_top = 2;
+			headingprioritypopbox.margin_end = 2;
+			headingprioritypopbox.margin_start = 2;
+			headingprioritypopbox.margin_bottom = 2;
+			headingprioritypopscroll.set_child(headingprioritypopbox);
+			headingprioritypop.set_child(headingprioritypopscroll);
+// PRIORITY: adapt size to content
+			headingprioritypop.width_request = 160;
+			headingprioritypop.height_request = 240;
+			headingprioritybutton.popover = headingprioritypop;
+			headingprioritybuttonclick = new Gtk.GestureClick();
+			headingprioritybutton.add_controller(headingprioritybuttonclick);
+			headingprioritypop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingprioritypop.get_first_child().get_style_context().add_class("xx");
+			headingprioritybutton.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingprioritybutton.get_first_child().get_style_context().add_class("xx");
+			headingprioritybuttonclick.pressed.connect(() => {
+				if (todos.length > 0) {
+					if (doup) {
+						doup = false;
+						while (headingprioritypopbox.get_first_child() != null) {
+							headingprioritypopbox.remove(headingprioritypopbox.get_first_child());
+						}
+						for(int p = 0; p < priorities.length; p++) {
+							Gtk.Button tduh = new Gtk.Button.with_label(priorities[p].name);
+							tduh.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							tduh.get_style_context().add_class("xx");
+							headingprioritypopbox.append(tduh);
+							tduh.clicked.connect((nuh) => {
+								uint tdx = findpriorityidbyname(nuh.label, priorities);
+								if (tdx != -1) { 
+									headings[idx].priority = tdx;
+									addheadertoprioritiesbyindex(findprioritybyname(nuh.label,priorities),headings[idx].id);
+									headingprioritybutton.set_label(nuh.label);
+								} else { print("%s doesn't match any priority names...\n",nuh.label); }
+								headingprioritypop.popdown();
+							});
+						}
+						doup = true;
+					}
+				}
+			});
+
+			headingtodobutton = new Gtk.MenuButton();
+			headingtodobutton.set_label("");
+			headingtodopop = new Gtk.Popover();
+			headingtodopopbox = new Gtk.Box(VERTICAL,0);
+			headingtodopopscroll = new Gtk.ScrolledWindow();
+			headingtodopopbox.margin_top = 2;
+			headingtodopopbox.margin_end = 2;
+			headingtodopopbox.margin_start = 2;
+			headingtodopopbox.margin_bottom = 2;
+			headingtodopopscroll.set_child(headingtodopopbox);
+			headingtodopop.set_child(headingtodopopscroll);
+// TODO: adapt size to content
+			headingtodopop.width_request = 160;
+			headingtodopop.height_request = 240;
+			headingtodobutton.popover = headingtodopop;
+			headingtodobuttonclick = new Gtk.GestureClick();
+			headingtodobutton.add_controller(headingtodobuttonclick);
+			headingtodopop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingtodopop.get_first_child().get_style_context().add_class("xx");
+			headingtodobutton.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingtodobutton.get_first_child().get_style_context().add_class("xx");
+			headingtodobuttonclick.pressed.connect(() => {
+				if (todos.length > 0) {
+					if (doup) {
+						doup = false;
+						while (headingtodopopbox.get_first_child() != null) {
+							headingtodopopbox.remove(headingtodopopbox.get_first_child());
+						}
+						for(int t = 0; t < todos.length; t++) {
+							Gtk.Button pduh = new Gtk.Button.with_label(todos[t].name);
+							pduh.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							pduh.get_style_context().add_class("xx");
+							headingtodopopbox.append(pduh);
+							pduh.clicked.connect((nuh) => {
+								uint tdx = findtodoidbyname(nuh.label, todos);
+								if (tdx != -1) { 
+									headings[idx].todo = tdx;
+									addheadertotodosbyindex(findtodobyname(nuh.label,todos),headings[idx].id);
+									headingtodobutton.set_label(nuh.label);
+								} else { print("%s doesn't match any todo names...\n",nuh.label); }
+								headingtodopop.popdown();
+							});
+						}
+						doup = true;
+					}
+				}
+			});
+
+			headingtaglist = new Gtk.Label("");
+			headingtaglist.get_first_child().get_style_context().add_provider(lblcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingtaglist.get_first_child().get_style_context().add_class("xx");
+			headingtagbutton = new Gtk.MenuButton();
+			headingtagbutton.set_label("");
+			headingtagpop = new Gtk.Popover();
+			headingtagpopbox = new Gtk.Box(VERTICAL,0);
+			headingtagpopscroll = new Gtk.ScrolledWindow();
+			headingtagpopbox.margin_top = 2;
+			headingtagpopbox.margin_end = 2;
+			headingtagpopbox.margin_start = 2;
+			headingtagpopbox.margin_bottom = 2;
+			headingtagpopscroll.set_child(headingtagpopbox);
+			headingtagpop.set_child(headingtagpopscroll);
+// TAG: adapt size to content
+			headingtagpop.width_request = 160;
+			headingtagpop.height_request = 240;
+			headingtagbutton.popover = headingtagpop;
+			headingtagbuttonclick = new Gtk.GestureClick();
+			headingtagbutton.add_controller(headingtagbuttonclick);
+			headingtagpop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingtagpop.get_first_child().get_style_context().add_class("xx");
+			headingtagbutton.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			headingtagbutton.get_first_child().get_style_context().add_class("xx");
+			headingtagbuttonclick.pressed.connect(() => {
+				if (tags.length > 0) {
+					if (doup) {
+						doup = false;
+						while (headingtagpopbox.get_first_child() != null) {
+							headingtagpopbox.remove(headingtagpopbox.get_first_child());
+						}
+						for(int t = 0; t < tags.length; t++) {
+							Gtk.Button pduh = new Gtk.Button.with_label(tags[t].name);
+							pduh.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							pduh.get_style_context().add_class("xx");
+							headingtagpopbox.append(pduh);
+							pduh.clicked.connect((nuh) => {
+								uint tdx = findtagidbyname(nuh.label, tags);
+								if (tdx != -1) { 
+									//headings[idx].tags += tdx;
+									toggleheadertagbyindex(idx,findtagidbyname(nuh.label, tags));
+									addheadertotagsbyindex(findtagindexbyname(nuh.label,tags),idx);
+									headingtagbutton.set_label(nuh.label);
+									string[] htaglist = {};
+									for (int g = 0; g < headings[idx].tags.length; g++) {
+										string gn = findtagnamebyid(headings[idx].tags[g], tags);
+										if (gn.length > 0) { htaglist += gn; }
+										//print("\t\tfound tag name: (%s)\n",findtagnamebyid(headings[idx].tags[g], tags));
+									}
+									headingtaglist.set_text("");
+									if (htaglist.length > 0) {
+										headingtaglist.set_text(":%s:".printf(string.joinv(":",htaglist)));
+									}
+								} else { print("%s doesn't match any tag names...\n",nuh.label); }
+								headingtagpop.popdown();
+							});
+						}
+						doup = true;
+					}
+				}
+			});
+
+			hbox.append(headingtodobutton);
+			hbox.append(headingprioritybutton);
+			hbox.append(headingname);
+			hbox.append(headingtaglist);
+			hbox.append(headingtagbutton);
+			headingname.text = headings[idx].name;
 			this.margin_top = 10;
 			this.margin_start = 10;
 			this.margin_end = 10;
@@ -2051,6 +2378,8 @@ public class ParamBox : Gtk.Box {
 					}
 				}
 			}
+			pbox.get_style_context().add_provider(pbxcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
+			pbox.get_style_context().add_class("xx");
 			this.append(pscroll);
 		}
 	}
@@ -2075,13 +2404,19 @@ public class ParamBox : Gtk.Box {
 }
 
 public class ModalBox : Gtk.Box {
-	private Gtk.Box content;
+	public Gtk.Box content;
 	private Gtk.Box control;
 	private Gtk.Box typelistpopbox;
 	private Gtk.Popover typelistpop;
 	private Gtk.MenuButton typelistbutton;
 	private Gtk.ScrolledWindow typpopscroll;
 	private Gtk.GestureClick typelistclick;
+	private Gtk.CssProvider ctrcsp;
+	private string ctrcss;
+	private Gtk.CssProvider concsp;
+	private string concss;
+	private string butcss;
+	private Gtk.CssProvider butcsp;
 	public ModalBox (int typ) {
 		print("MODALBOX: created...\n");
 // typ 0 = outliner
@@ -2090,16 +2425,38 @@ public class ModalBox : Gtk.Box {
 // typ 3 = processgraph
 // typ 4 = timeline
 		this.set_orientation(VERTICAL);
-		this.spacing = 10;
+		this.spacing = 0;
 		this.vexpand = false;
 		content = new Gtk.Box(VERTICAL,0);
 		control = new Gtk.Box(HORIZONTAL,0);
 		content.vexpand = true;
 		control.hexpand = false;
-		control.margin_top = 10;
-		control.margin_end = 10;
-		control.margin_start = 10;
-		control.margin_bottom = 10;
+
+		content.margin_top = 0;
+		content.margin_end = 0;
+		content.margin_start = 0;
+		content.margin_bottom = 0;
+
+		control.margin_top = 0;
+		control.margin_end = 0;
+		control.margin_start = 0;
+		control.margin_bottom = 0;
+
+		ctrcsp = new Gtk.CssProvider();
+		ctrcss = ".xx { background: %s; }".printf(sbshd);
+		ctrcsp.load_from_data(ctrcss.data);
+		control.get_style_context().add_provider(ctrcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
+		control.get_style_context().add_class("xx");
+
+		concsp = new Gtk.CssProvider();
+		concss = ".xx { background: %s; }".printf(sbbkg);
+		concsp.load_from_data(concss.data);
+		content.get_style_context().add_provider(concsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
+		content.get_style_context().add_class("xx");
+
+		butcsp = new Gtk.CssProvider();
+		butcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sblit,sbsel);
+		butcsp.load_from_data(butcss.data);
 
 		typelistbutton = new Gtk.MenuButton();
 		typelistpop = new Gtk.Popover();
@@ -2108,6 +2465,8 @@ public class ModalBox : Gtk.Box {
 
 		foreach (string s in paneltypes) {
 			Gtk.Button muh = new Gtk.Button.with_label (s);
+			muh.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			muh.get_style_context().add_class("xx");
 			typelistpopbox.append(muh);
 			muh.clicked.connect ((buh) => {
 				if (buh.label == "Parameters") {
@@ -2119,15 +2478,15 @@ public class ModalBox : Gtk.Box {
 			});
 		}
 		typelistbutton.icon_name = "document-open-symbolic";
-		typelistpopbox.margin_top = 5;
-		typelistpopbox.margin_end = 5;
-		typelistpopbox.margin_start = 5;
-		typelistpopbox.margin_bottom = 5;
+		typelistpopbox.margin_top = 0;
+		typelistpopbox.margin_end = 0;
+		typelistpopbox.margin_start = 0;
+		typelistpopbox.margin_bottom = 0;
 		typpopscroll.set_child(typelistpopbox);
-		typelistpop.width_request = 300;
+		typelistpop.width_request = 200;
 		//int wwx, wwy = 0;
 		//frownwin.get_default_size(out wwx,out wwy);
-		typelistpop.height_request = 200;
+		typelistpop.height_request = 220;
 		typelistpop.set_child(typpopscroll);
 		typelistbutton.popover = typelistpop;
 		typelistpop.set_position(TOP);
@@ -2137,8 +2496,18 @@ public class ModalBox : Gtk.Box {
 			print("typelist selected\n");
 		});
 
-		control.append(typelistbutton);
+		typelistpop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		typelistpop.get_first_child().get_style_context().add_class("xx");
+		typelistbutton.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		typelistbutton.get_first_child().get_style_context().add_class("xx");
 
+		control.append(typelistbutton);
+		this.margin_top = 0;
+		this.margin_end = 0;
+		this.margin_start = 0;
+		this.margin_bottom = 0;
+		this.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		this.get_style_context().add_class("xx");
 		this.append(content);
 		this.append(control);
 	}
@@ -2199,31 +2568,45 @@ public class frownwin : Gtk.ApplicationWindow {
 		iobar.set_title_widget(titlelabel);
 		this.set_titlebar(iobar);
 		this.set_default_size(360, (720 - 46));
-		
+
+		Gtk.CssProvider hedcsp = new Gtk.CssProvider();
+		string hedcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sblow,sbsel);
+		hedcsp.load_from_data(hedcss.data);
+		iobar.get_style_context().add_provider(hedcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		iobar.get_style_context().add_class("xx");
+	
 // headerbr buttons
 
 		Gtk.MenuButton savemenu = new Gtk.MenuButton();
 		Gtk.MenuButton loadmenu = new Gtk.MenuButton();
+		savemenu.icon_name = "document-save-symbolic";
+		loadmenu.icon_name = "document-open-symbolic";
+
+		Gtk.CssProvider butcsp = new Gtk.CssProvider();
+		string butcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sblit,sbsel);
+		butcsp.load_from_data(butcss.data);
+		savemenu.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		savemenu.get_first_child().get_style_context().add_class("xx");
+		loadmenu.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		loadmenu.get_first_child().get_style_context().add_class("xx");
 
 		Gtk.GestureClick loadmenuclick = new Gtk.GestureClick();
 		loadmenu.add_controller(loadmenuclick);
 
-		savemenu.icon_name = "document-save-symbolic";
-		loadmenu.icon_name = "document-open-symbolic";
 
 		Gtk.Button savebutton = new Gtk.Button.with_label("save");
 		Gtk.Popover savepop = new Gtk.Popover();
 		Gtk.Popover loadpop = new Gtk.Popover();
-		Gtk.Box savepopbox = new Gtk.Box(VERTICAL,5);
-		Gtk.Box loadpopbox = new Gtk.Box(VERTICAL,5);
-		savepopbox.margin_end = 5;
-		savepopbox.margin_top = 5;
-		savepopbox.margin_start = 5;
-		savepopbox.margin_bottom = 5;
-		loadpopbox.margin_end = 5;
-		loadpopbox.margin_top = 5;
-		loadpopbox.margin_start = 5;
-		loadpopbox.margin_bottom = 5;
+		Gtk.Box savepopbox = new Gtk.Box(VERTICAL,0);
+		Gtk.Box loadpopbox = new Gtk.Box(VERTICAL,0);
+		savepopbox.margin_end = 2;
+		savepopbox.margin_top = 2;
+		savepopbox.margin_start = 2;
+		savepopbox.margin_bottom = 2;
+		loadpopbox.margin_end = 2;
+		loadpopbox.margin_top = 2;
+		loadpopbox.margin_start = 2;
+		loadpopbox.margin_bottom = 2;
 		saveentry = new Gtk.Entry();
 		saveentry.text = "default";
 		savepopbox.append(saveentry);
@@ -2235,14 +2618,20 @@ public class frownwin : Gtk.ApplicationWindow {
 		iobar.pack_start(loadmenu);
 		iobar.pack_end(savemenu);
 
+
+
+		savepop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		savepop.get_first_child().get_style_context().add_class("xx");
+		loadpop.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+		loadpop.get_first_child().get_style_context().add_class("xx");
+
 // load
 
 		loadmenuclick.pressed.connect(() => {
 			if (doup) {
 				doup = false;
 				while (loadpopbox.get_first_child() != null) {
-					//loadpopbox.remove(loadpopbox.get_first_child());
-					loadpopbox.get_first_child().destroy();
+					loadpopbox.remove(loadpopbox.get_first_child());
 				}
 				print("LOAD: button pressed...\n");
 				var pth = GLib.Environment.get_current_dir();
@@ -2258,6 +2647,8 @@ public class frownwin : Gtk.ApplicationWindow {
 							print("LOAD:\tchecking file: %s\n", name);
 							if (exts[1] == "org") {
 								Gtk.Button muh = new Gtk.Button.with_label (name);
+								muh.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+								muh.get_style_context().add_class("xx");
 								loadpopbox.append(muh);
 								muh.clicked.connect ((buh) => {
 									if (buh.label.strip() != "") {
@@ -2289,6 +2680,8 @@ public class frownwin : Gtk.ApplicationWindow {
 		vdiv.end_child = paneb;
 		vdiv.wide_handle = true;
 		vdiv.set_shrink_end_child(false);
+		var fch = (Gtk.Widget) vdiv.get_start_child();
+		var sep = (Gtk.Widget) fch.get_next_sibling();
 
 // add to window
 
@@ -2308,15 +2701,21 @@ public class frownwin : Gtk.ApplicationWindow {
 ///////////        `   //           //    `      //          //       `    ///////////      
 /////////////////////////////////////////////////////////////////////////////////////         
                                                                                            
-                                                                                           
+//		sbbkg = "#112633";	// sb blue
+//		sbsel = "#50B5F2";	// selection/text
+//		sblin = "#08131A";	// dark lines
+//		sblit = "#19394D";	// sbbkg + 10
+//		sbhil = "#1D4259";	// sbbkg + 5
+//		sblow = "#153040";	// sbbkg - 5
+//		sbshd = "#0C1D26";	// sbbkg - 10
+//		sbent = "#0E232E";	// sbbkg - 12
 
+		Gtk.CssProvider pcsp = new Gtk.CssProvider();
+		string pcss = ".wide { min-width: 20px; min-height: 20px; border-width: 4px; border-color: %s; border-style: solid; background: repeating-linear-gradient( -45deg, %s, %s 4px, %s 5px, %s 9px);}".printf(sbbkg,sbshd,sbshd,sbbkg,sbbkg);
+		pcsp.load_from_data(pcss.data);
+		sep.get_style_context().add_provider(pcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
+		sep.get_style_context().add_class("wide");
 
-// string sbbackground 	= "#112633FF";	// sb blue
-// string sbselect 		= "#327299FF";	// bright selection
-// string sblines 			= "#08131AFF";	// dark lines
-// string sblight 			= "#19394DFF";	// +5 background
-// string sbshade 			= "#0C1D26FF";	// -5 background
-// string sbentry 			= "#0E232EFF";	// -2 background
 
 // initialize
 
