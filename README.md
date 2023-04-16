@@ -10,5 +10,6 @@ its here for my own personal use only
 strewn across the yard atm
 
 # screenie
-*work in progress*
-![screenie](230417_frownedupon_paragraph_params.png)
+*work in progress*  
+![screenie](230417_frownedupon_paragraph_params.png)  
+paragraph elements, with eval preview of val:var links
