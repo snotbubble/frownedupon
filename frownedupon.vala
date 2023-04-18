@@ -201,7 +201,7 @@ void crosslinkeverything () {
 	}
 }
 
-int findtodobyname (string n, todo[] h) {
+int findtodoindexbyname (string n, todo[] h) {
 	for (int q = 0; q < h.length; q++) {
 		if (h[q].name == n) { return q; }
 	}
@@ -222,7 +222,7 @@ uint findpriorityidbyname (string n, priority[] h) {
 	return -1;
 }
 
-int findprioritybyname (string n, priority[] h) {
+int findpriorityindexbyname (string n, priority[] h) {
 	for (int q = 0; q < h.length; q++) {
 		if (h[q].name == n) { return q; }
 	}
@@ -372,10 +372,86 @@ uint makemeahash(string n, int t) {
 	return "%s_%d_%lld".printf(n,t,GLib.get_real_time()).hash();
 }
 
-// TODO: uniquename
-//string makemeauniquename(string n) {
-//
-//}
+string makemeauniqueoutputname(string n) {
+	int64 uqts = GLib.get_real_time();
+	string k = n;
+	string j = n;
+	if (n.strip() == "") { k = "untitled_output"; j = k; }
+	string[] shorts = {};
+	for (int h = 0; h < headings.length; h++) {
+		for (int e = 0; e < headings[h].elements.length; e++) {
+			for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
+				if (headings[h].elements[e].outputs[o].name != null) {
+					if (headings[h].elements[e].outputs[o].name.length > 0) {
+						if (headings[h].elements[e].outputs[o].name[0] == n[0]) {
+							shorts += headings[h].elements[e].outputs[o].name;
+						}
+					}
+				}
+			}
+		}
+	}
+	int x = 1;
+	if (shorts.length > 0) {
+		int maxout = (shorts.length * shorts.length);
+		while ((k in shorts) == true) {
+			int ld = (k.length - 1); while (ld > 0 && k[ld].isdigit()) { ld--; }
+			string digs = k.substring((ld + 1),(k.length - (ld + 1)));
+			k = "%s%d".printf(j.substring(0,(ld + 1)),(int.parse(digs) + 1));
+			x += 1;
+			if (x > maxout) { break; } // incasement
+		}
+	}
+	if (spew) {
+		int64 uqte = GLib.get_real_time();
+		print("\nuniqueoutputname took %f micorseconds @%d rounds and returned: %s\n\n",((double) (uqte - uqts)),x,k); 
+	}
+	return k;
+}
+
+string makemeauniqueparaname(string n, uint u) {
+	int64 uqts = GLib.get_real_time();
+	string k = n;
+	string j = n;
+	if (n.strip() == "") { k = "untitled_paragraph"; j = k; }
+	string[] shorts = {};
+	for (int h = 0; h < headings.length; h++) {
+		for (int e = 0; e < headings[h].elements.length; e++) {
+			if (headings[h].elements[e].id != u) {
+				if (headings[h].elements[e].type != null) {
+					if (headings[h].elements[e].type == "paragraph") {
+						if (headings[h].elements[e].name != null) {
+							if (headings[h].elements[e].name.length > 0) {
+								if (headings[h].elements[e].name[0] == n[0]) {
+									shorts += headings[h].elements[e].name;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	//for( int v = 0; v < shorts.length; v++) {
+	//	print("collected paragraph name: %s\n",shorts[v]);
+	//}
+	int x = 1;
+	if (shorts.length > 0) {
+		int maxout = (shorts.length * shorts.length);
+		while ((k in shorts) == true) {
+			int ld = (k.length - 1); while (ld > 0 && k[ld].isdigit()) { ld--; }
+			string digs = k.substring((ld + 1),(k.length - (ld + 1)));
+			k = "%s%d".printf(j.substring(0,(ld + 1)),(int.parse(digs) + 1));
+			x += 1;
+			if (x > maxout) { break; } // incasement
+		}
+	}
+		int64 uqte = GLib.get_real_time();
+	if (spew) {
+		print("\nuniqueparaname took %f micorseconds @%d rounds and returned: %s\n\n",((double) (uqte - uqts)),x,k); 
+	}
+	return k;
+}
 
 /* TODO: list input element ids to eval, from selected, in order of execution
 uint[] evalpath (uint[] nn, uint me) {
@@ -491,7 +567,7 @@ int findexample (int l, int ind, string n) {
 			ee.type = "example";
 			ee.id = makemeahash(ee.name,c);
 			output pp = output();
-			pp.name = ee.name.concat("_verbatimtext");
+			pp.name = makemeauniqueoutputname(ee.name.concat("_verbatimtext"));
 			pp.id = makemeahash(ee.name, c);
 			pp.value = string.joinv("\n",txt);
 			ee.outputs += pp;
@@ -541,7 +617,7 @@ int findparagraph (int l, int ind) {
 		ee.type = "paragraph";
 		output pp = output();
 		//pp.target = null;
-		pp.name = ee.name.concat("_text");
+		pp.name = makemeauniqueoutputname(ee.name.concat("_text"));
 		pp.id = makemeahash(ee.name, c);
 		pp.value = string.joinv("\n",txt);
 		pp.owner = ee.id;
@@ -741,7 +817,7 @@ int findtable (int l, int ind, string n) {
 					ee.type = "table";
 					ee.id = makemeahash(ee.name,(tln+rc));
 					output oo = output();
-					oo.name = tablename.concat("_spreadsheet");
+					oo.name = makemeauniqueoutputname(tablename.concat("_spreadsheet"));
 					oo.id = makemeahash(oo.name,(tln+rc));
 					oo.value = csv;
 					oo.owner = ee.id;
@@ -956,7 +1032,7 @@ int findsrcblock (int l,int ind, string n) {
 
 // make placeholder output
 		output rr = output();
-		rr.name = nwn.concat("_result");
+		rr.name = makemeauniqueoutputname(nwn.concat("_result"));
 		rr.id = makemeahash(rr.name,b);
 
 		if (spew) { print("[%d]%sfindsrcblock stored placeholder output: %s.\n",b,tabs,rr.name); }
@@ -1055,7 +1131,7 @@ int findpropbin(int l, int ind) {
 				string[] propparts = lines[b].split(":");
 				if (propparts.length > 2 && propparts[0].strip() == "") {
 					output o = output();
-					o.name = propparts[1].strip();
+					o.name = makemeauniqueoutputname(propparts[1].strip());
 					o.value = propparts[2].strip();
 					o.id = o.name.hash();
 					o.owner = ee.id;
@@ -1108,7 +1184,7 @@ int findheading (int l, int ind) {
 					aa.todo = tdo.id;
 					todos += tdo;
 				} else {
-					int ftdo = findtodobyname(tdon,todos);
+					int ftdo = findtodoindexbyname(tdon,todos);
 					if (ftdo < todos.length) {
 						aa.todo = todos[ftdo].id;
 					}
@@ -1130,7 +1206,7 @@ int findheading (int l, int ind) {
 					aa.priority = pri.id;
 					priorities += pri;
 				} else {
-					int fpri = findprioritybyname(prn,priorities);
+					int fpri = findpriorityindexbyname(prn,priorities);
 					if (fpri < priorities.length) {
 						aa.priority = priorities[fpri].id;
 					}
@@ -1213,7 +1289,7 @@ int findname(int l, int ind) {
 			ee.id = ee.name.hash();
 			ee.type = "nametag";
 			output oo = output();
-			oo.name = lsp[1];
+			oo.name = makemeauniqueoutputname(lsp[1]);
 			oo.id = oo.name.hash();
 			oo.value = lsp[2];
 			oo.owner = ee.id;
@@ -1468,7 +1544,7 @@ void loadmemyorg (string defile) {
 			int64 chxts = GLib.get_real_time();
 			crosslinkeverything();
 			int64 chxte = GLib.get_real_time();
-			if (spew) { print("\nfind example took %f microseconds\n\n",((double) (chxte - chxts)));}
+			if (spew) { print("\ncrosslink took %f microseconds\n\n",((double) (chxte - chxts)));}
 			if (headings.length > 0) { sel = headings[0].id; hidx = 0; }
 			if (spew) { print("checking elements...\n"); }
 			for (int h = 0; h < headings.length; h++) {
@@ -1536,6 +1612,7 @@ public class OutputRow : Gtk.Box {
 	private Gtk.CssProvider lblcsp;
 	private string lblcss;
 	private Gtk.ToggleButton outputvalmaxi;
+	private Gtk.DragSource oututrowdragsource;
 	private string evalmyparagraph(int h,int e,int o) {
 		// para eval goes here
 		string v = headings[h].elements[e].outputs[o].value;
@@ -1731,6 +1808,12 @@ public class OutputRow : Gtk.Box {
 			this.margin_end = 0;
 			this.margin_bottom = 0;
 			this.append(outputcontainer);
+			oututrowdragsource = new Gtk.DragSource();
+			oututrowdragsource.set_actions(Gdk.DragAction.COPY);
+			//oututrowdragsource.prepare.connect((source, x, y) => {
+			//	return 0;
+			//});
+			oututrowdragsource.drag_begin.connect((source,drag) => { return true; });
 		}
 	}
 }
@@ -1926,6 +2009,14 @@ public class ParagraphBox : Gtk.Box {
 				parabox.append(paranamebar);
 				paraname.text = headings[hidx].elements[idx].name;
 				this.name = paraname.text;
+				paraname.activate.connect(() => {
+					doup = false;
+					print("this element name is %s\n",headings[hidx].elements[idx].name);
+					string nn = makemeauniqueparaname(paraname.text,headings[hidx].elements[idx].id);
+					paraname.text = nn;
+					headings[hidx].elements[idx].name = nn;
+					doup = true;
+				});
 				if (headings[hidx].elements[idx].inputs.length > 0) {
 					parainputbox = new Gtk.Box(VERTICAL,4);
 					parainputcontrolbox = new Gtk.Box(HORIZONTAL,4);
@@ -2191,7 +2282,7 @@ public class HeadingBox : Gtk.Box {
 								uint tdx = findpriorityidbyname(nuh.label, priorities);
 								if (tdx != -1) { 
 									headings[idx].priority = tdx;
-									addheadertoprioritiesbyindex(findprioritybyname(nuh.label,priorities),headings[idx].id);
+									addheadertoprioritiesbyindex(findpriorityindexbyname(nuh.label,priorities),headings[idx].id);
 									headingprioritybutton.set_label(nuh.label);
 								} else { print("%s doesn't match any priority names...\n",nuh.label); }
 								headingprioritypop.popdown();
@@ -2239,7 +2330,7 @@ public class HeadingBox : Gtk.Box {
 								uint tdx = findtodoidbyname(nuh.label, todos);
 								if (tdx != -1) { 
 									headings[idx].todo = tdx;
-									addheadertotodosbyindex(findtodobyname(nuh.label,todos),headings[idx].id);
+									addheadertotodosbyindex(findtodoindexbyname(nuh.label,todos),headings[idx].id);
 									headingtodobutton.set_label(nuh.label);
 								} else { print("%s doesn't match any todo names...\n",nuh.label); }
 								headingtodopop.popdown();
