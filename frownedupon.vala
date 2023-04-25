@@ -4,6 +4,13 @@
 //
 //
 // status: horribly broken...
+//
+// incompatibilities with org, so far...
+// - [[val:var]] link type is supported here (in paragraphs only), but not in org.
+// - naming is independent of linking as it uses ids,
+//   frownedupon will link stuff by name (or reference to name) on load, 
+//   but after that you can link any output to any input, including property drawers,
+//   which break backwards compatibility with org
 
 
 using GLib;
@@ -183,17 +190,63 @@ string getheadingnamebyid (uint n) {
 	return "";
 }
 
+uint getmysourcebypropname(string n, int g, int y) {
+	for (int h = g; h >= 0; h--) {
+		if (headings[h].stars <= y) {
+			for (int e = 0; e < headings[h].elements.length; e++) {
+				for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
+					if (headings[h].elements[e].outputs[o].name == n) { 
+						return headings[h].elements[e].outputs[o].id; 
+					}
+				}
+			}
+		} else { break; }
+	}
+	return 0;
+}
+
+uint getmysourcebyvalvar(string n, int g, int y) {
+	for (int h = g; h >= 0; h--) {
+		if (headings[h].stars <= y) {
+			for (int e = 0; e < headings[h].elements.length; e++) {
+				for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
+					if (headings[h].elements[e].outputs[o].name == n) { 
+						return headings[h].elements[e].outputs[o].id; 
+					}
+				}
+			}
+		} else { break; }
+	}
+	return getmysourceidbyname(n);
+}
 
 void crosslinkeverything () {
+	uint myo = 0;
 	for (int h = 0; h < headings.length; h++) {
 		for (int e = 0; e < headings[h].elements.length; e++) {
 			for (int i = 0; i < headings[h].elements[e].inputs.length; i++) {
+				myo = 0;
 				if (headings[h].elements[e].inputs[i].name != null) { 
 					if (headings[h].elements[e].inputs[i].name != "") { 
-						uint myo = getmysourceidbyname(headings[h].elements[e].inputs[i].name);
-						if (myo != 0) {
-							headings[h].elements[e].inputs[i].source = myo;
+						if (headings[h].elements[e].inputs[i].org != null && headings[h].elements[e].inputs[i].org != "") {
+							if (headings[h].elements[e].inputs[i].org.contains("org-entry-get")) {
+
+// local search for propbin
+								int sq = headings[h].elements[e].inputs[i].org.index_of("\"") + 1;
+								int eq = headings[h].elements[e].inputs[i].org.last_index_of("\"");
+								myo = getmysourcebypropname(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+							}
+							if (headings[h].elements[e].inputs[i].org.contains("[[val:")) {
+
+// local search for name or propbin. failing that: global name search
+								int sq = headings[h].elements[e].inputs[i].org.index_of(":") + 1;
+								int eq = headings[h].elements[e].inputs[i].org.last_index_of("]]");
+								myo = getmysourcebyvalvar(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+							}
+						} else {
+							myo = getmysourceidbyname(headings[h].elements[e].inputs[i].name);
 						}
+						if (myo != 0) { headings[h].elements[e].inputs[i].source = myo; }
 					}
 				}
 			}
@@ -1012,6 +1065,7 @@ int findsrcblock (int l,int ind, string n) {
 // turn vars into inputs, sources are checked in a post-process, as the source may not exist yet
 // check this with foreign language vars
 				if (hp[m].has_prefix("var ")) {
+					if (spew) { print("[%d]%s\t\tfound vars: %s\n",b,tabs,hp[m]); }
 					string[] v = hp[m].split("=");
 					v[0] = v[0].replace("var ","").strip();
 					string[] hvars = {v[0]};
@@ -1054,10 +1108,24 @@ int findsrcblock (int l,int ind, string n) {
 						if (hvars[p] != null) {
 							if (spew) { print("[%d]%s\t\tvar pair: %s, %s\n",b,tabs,hvars[p],hvars[(p+1)]); }
 							input ip = input();
+							ip.org = "%s=%s".printf(hvars[p],hvars[(p+1)]);	// org syntax
+
+// removed to sacrifice speed for org-compatibility
+/*
+							if (hvars[(p+1)].contains("org-entry-get")) {
+								if (spew) { print("[%d]%s\t\tsyncing var name with org-entry-get...\n",b,tabs); }
+								int sq = hvars[(p+1)].index_of("\"") + 1;
+								int eq = hvars[(p+1)].last_index_of("\"");
+								if (sq < eq) {
+									if (spew) { print("[%d]%s\t\t\trenamed %s",b,tabs,hvars[p]); }
+									hvars[p] = hvars[(p+1)].substring(sq,(eq-sq));
+									if (spew) { print(" to %s\n",hvars[p]); }
+								}
+							}
+*/
 							ip.name = hvars[p];								// name
 							ip.id = makemeahash(ip.name, b);							// id, probably redundant
 							ip.value = hvars[(p+1)];							// value - volatile
-							ip.org = "%s=%s".printf(hvars[p],hvars[(p+1)]);	// org syntax
 							ip.defaultv = hvars[(p+1)];						// fallback value
 							ip.owner = ee.id;
 							ee.inputs += ip;
@@ -1099,6 +1167,7 @@ int findsrcblock (int l,int ind, string n) {
 					}
 					for (int p = 0; p < o.length; p++) {
 						if (o[p] != null) {
+							
 							if (spew) { print("[%d]%s\t\tparam name val pair: %s, %s\n",b,tabs,o[p],o[(p+1)]); }
 							param pp = param();
 							pp.name = o[p];			// name
@@ -1779,7 +1848,6 @@ public class OutputRow : Gtk.Box {
 			}
 
 // edit output name
-// TODO: detect other param panes and update those too
 			outputvar.changed.connect(() => {
 				if (doup) {
 					doup = false;
@@ -1788,7 +1856,18 @@ public class OutputRow : Gtk.Box {
 						string nn = renameuniqueoutputname(outputvar.text,headings[hidx].elements[e].outputs[idx].id,headings[hidx].elements[e].type);
 						nn = nn.strip();
 						headings[hidx].elements[e].outputs[idx].name = nn;
-						refreshthisheadingelementinputs(hidx,headings[hidx].elements[e].outputs[idx].id,nn);
+						//refreshthisheadingelementinputs(hidx,headings[hidx].elements[e].outputs[idx].id,nn);
+					}
+					doup = true;
+				}
+			});
+
+// edit output val one-liner
+			outputval.changed.connect(() => {
+				if (doup) {
+					doup = false;
+					if (outputval.text.strip() != "") {
+						headings[hidx].elements[e].outputs[idx].value = outputval.text.strip();
 					}
 					doup = true;
 				}
