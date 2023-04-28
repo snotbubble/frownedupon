@@ -3,14 +3,16 @@
 // by c.p.brown 2023
 //
 //
-// status: horribly broken...
+// status: brain surgery (changed my mind about not using pointers)
 //
 // incompatibilities with org, so far...
+// - no inline columnview (table from property drawers).
 // - [[val:var]] link type is supported here (in paragraphs only), but not in org.
 // - naming is independent of linking as it uses ids,
 //   frownedupon will link stuff by name (or reference to name) on load, 
 //   but after that you can link any output to any input, including property drawers,
-//   which break backwards compatibility with org
+//   which may not work with org-entry-get in org.
+//   for now I'll assume the user knows this and will decide for themselves
 
 
 using GLib;
@@ -19,18 +21,25 @@ using GLib;
 
 struct output {
 	uint id;
+	int index;
 	string name;
 	string value;
-	uint owner;
+	uint[] ibuff;
+	element* owner;
+	uint ebuff;
+	input*[] targets;
 }
 struct input {
 	uint id;
+	int index;
 	string name;
-	uint source;
 	string value;
 	string defaultv;
 	string org;
-	uint owner;
+	element* owner;
+	uint ebuff;
+	uint obuff;
+	output* source;
 }
 struct param {
 	string name;
@@ -40,11 +49,15 @@ struct param {
 struct element {
 	string			name;			// can be whatever, but try to autoname to be unique
 	uint			id;			// hash of name + iterator + time
+	int			index;			// array index
 	string			type;			// used for ui, writing back to org
-	input[]		inputs;		// can take input wires
-	output[]		outputs;		// can be wired out
+	input*[]		inputs;		// can take input wires
+	output*[]		outputs;		// can be wired out
 	param[]		params;		// local params; no wiring
-	uint			owner;			// 
+	uint[]			ibuff;			// input ids, for relinking after sorting and deletions
+	uint[]			obuff;			// as above for outputs
+	heading*		owner;			// the heading that owns this element
+	uint			hbuff;			// id of heading, for relinking after sorting and deletion
 }
 struct todo {
 	string			name;			// todo string, must be unique
@@ -69,17 +82,19 @@ struct tag {
 struct heading {
 	string			name;			// can be whatever
 	uint			id;			// hash of name + iterator + time
+	int			index;			// array index
 	int			stars;			// indentation
 	uint			priority;		// id of priority, one per heading
 	uint			todo;			// id of todo, one per heading
 	uint[]			tags;			// id[] of tags, many per heading
 	uint			template;		// internal use only: template id
 	param[]		params;		// internal use only: fold, visible, positions 
-	element[]		elements;		// elements under this heading, might be broken out into flat lists later
+	element*[]		elements;		// elements under this heading, might be broken out into flat lists later
+	uint[]			ebuff;			// element ids for relinking after sorting and deletion
 	string			nutsack;		// misc stuff found under the headigng that wasn't captured as elements 
 }
-// globals
-// avoid dicking-around with refs, owned, unowned and other limitations
+
+// misc vars used everywhere
 
 string[]		lines;			// the lines of an orgfile
 string			srcblock;
@@ -90,7 +105,6 @@ element[]		elements;
 param[]		params;
 input[]		inputs;
 output[]		outputs;
-int			thisheading;	// index of current heading
 int[]			typecount;		// used for naming: 0 paragraph, 1 propdrawer, 2 srcblock, 3, example, 4 table, 5 command, 6 nametag
 bool			spew;			// print
 bool			hard;			// print more
@@ -100,12 +114,19 @@ todo[]			todos;
 bool			doup;			// block ui events
 uint			sel;			// selected item (fixed)
 int			hidx;			// header list index of selected item (volatile)
+int			eidx;			// element list index of selected item (volatile)
 string[]		paneltypes;
-Gtk.Entry		saveentry;		// save file feeld
-Gtk.Paned		vdiv;			// needed for reflow, resize, etc.
-//Gtk.ScrolledWindow	pbsw;		// parameter container
-//ParamBox			pbswp;		// parent of the above
-//Gtk.Box			opane;		// output box containing a sourceview
+
+Gtk.Entry			saveentry;	// save file feeld
+Gtk.Paned			vdiv;		// needed for reflow, resize, etc.
+Gtk.CssProvider	butcsp;	// button css provider
+string				butcss;	// button css string
+Gtk.CssProvider	entcsp;	// entry css provider
+string				entcss;	// entry css string
+Gtk.CssProvider	lblcsp;	// label css provider
+string				lblcss;	// label css string
+
+
 // default theme colors
 
 string sbbkg;	// sb blue
@@ -123,34 +144,135 @@ int imod (int a, int b) {
 	return ((a % b) + b) % b;
 }
 
-// 'linking' stuff, since we're nod doing refs anymore...
+void indexheadings () { for (int i = 0; i < headings.length; i++) { headings[i].index = i; } }
+void indexelements () { for (int i = 0; i < elements.length; i++) { elements[i].index = i; } }
+void indexinputs () { for (int i = 0; i < inputs.length; i++) { inputs[i].index = i; } }
+void indexoutputs () { for (int i = 0; i < outputs.length; i++) { outputs[i].index = i; } }
 
-string getmysourcevalbyid (uint s) {
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
-				if (headings[h].elements[e].outputs[o].id == s) { 
-					if (headings[h].elements[e].outputs[o].value != null) {
-						return headings[h].elements[e].outputs[o].value; 
+void elementownsio (int e) {
+	for(int w = 0; w < elements[e].outputs.length; w++) {
+		elements[e].outputs[w].owner = &elements[e];
+	}
+	for(int w = 0; w < elements[e].inputs.length; w++) {
+		elements[e].inputs[w].owner = &elements[e];
+	}
+}
+
+int getmysourceindexbyname (string n) {
+	for (int o = 0; o < outputs.length; o++) {
+		if (outputs[o].name == n) { return o; }
+	}
+	return -1;
+}
+
+void deletemyinputs(uint[] d) {
+// removes all io linkage, keeps all id buffers except whatever is in the delete list
+// rebuilds io linkage using id buffers
+	int64 dints = GLib.get_real_time();
+
+// clear io links, removing input ids from buffers
+	for (int i = 0; i < inputs.length; i++) {
+		if (inputs[i].source != null) {
+			inputs[i].source = null;
+		}
+	}
+	for (int o = 0; o < outputs.length; o++) {
+		outputs[o].targets = {};
+		uint[] tb = {};
+		for (int b = 0 ; b < outputs[o].ibuff.length; b++) {
+			if ((outputs[o].ibuff[b] in d) == false) {
+				if ((outputs[o].ibuff[b] in tb) == false) {
+					tb += outputs[o].ibuff[b];
+				}
+			}
+		}
+		outputs[o].ibuff = tb;
+	}
+	for (int n = 0; n < elements.length; n++) {
+		elements[n].inputs = {};
+		elements[n].outputs = {};
+		uint[] tb = {};
+		for (int b = 0 ; b < elements[n].ibuff.length; b++) {
+			if ((elements[n].ibuff[b] in d) == false) {
+				if ((elements[n].ibuff[b] in tb) == false) {
+					tb += elements[n].ibuff[b];
+				}
+			}
+		}
+		elements[n].ibuff = tb; 
+	}
+
+// delete inputs
+	input[] k = {};
+	for (int i = 0; i < inputs.length; i++) {
+		if ((inputs[i].id in d) == false) { k += inputs[i]; }
+	}
+	inputs = k;
+
+// re-link io
+	for (int i = 0; i < inputs.length; i++) {
+		if (inputs[i].obuff > 0) {
+			for (int q = 0; q < outputs.length; q++) {
+				if (outputs[q].id == inputs[i].obuff) {
+					inputs[i].source = &outputs[q]; break;
+				}
+			}
+		}
+	}
+	for (int o = 0; o < outputs.length; o++) {
+		if (outputs[o].ibuff.length > 0) {
+			for (int t = 0; t < outputs[o].ibuff.length; t++) {
+				for (int q = 0; q < inputs.length; q++) {
+					if (inputs[q].id == outputs[o].ibuff[t]) {
+						outputs[o].targets += &inputs[q];
 					}
 				}
 			}
 		}
 	}
-	return "";
-}
 
-uint getmysourceidbyname (string n) {
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
-				if (headings[h].elements[e].outputs[o].name == n) { 
-					return headings[h].elements[e].outputs[o].id; 
+// re-link element io
+	for (int n = 0; n < elements.length; n++) {
+		for(int i = 0; i < elements[n].ibuff.length; i++) { 
+			for (int q = 0; q < inputs.length; q++) {
+				if (inputs[q].id == elements[n].ibuff[i]) {
+					elements[n].inputs += &inputs[q];
+				}
+			}
+		}
+		for(int i = 0; i < elements[n].obuff.length; i++) { 
+			for (int q = 0; q < outputs.length; q++) {
+				if (outputs[q].id == elements[n].obuff[i]) {
+					elements[n].outputs += &outputs[q];
 				}
 			}
 		}
 	}
-	return 0;
+
+	indexinputs();
+	int64 dinte = GLib.get_real_time();
+	if (spew) { print("\ndelete inputs took %f microseconds\n",((double) (dinte - dints))); }
+}
+
+int getelementindexbyid(uint n) {
+	for (int q = 0; q < elements.length; q++) {
+		if (n == elements[q].id) { return q; }
+	}
+	return -1;
+}
+
+int getinputindexbyid(uint n) {
+	for (int q = 0; q < inputs.length; q++) {
+		if (n == inputs[q].id) { return q; }
+	}
+	return -1;
+}
+
+int getoutputindexbyid(uint n) {
+	for (int q = 0; q < outputs.length; q++) {
+		if (n == outputs[q].id) { return q; }
+	}
+	return -1;
 }
 
 int[] getmysourcepathbyid (uint n) {
@@ -190,37 +312,137 @@ string getheadingnamebyid (uint n) {
 	return "";
 }
 
-uint getmysourcebypropname(string n, int g, int y) {
+int getmysourceindexbypropname(string n, int g, int y) {
+	if (spew) { print("\t\tgetmysourceindexbypropname started...\n"); }
 	for (int h = g; h >= 0; h--) {
+		if (spew) { print("\t\t\tgetmysourceindexbypropname checking heading[%d] %s...\n",h,headings[h].name); }
 		if (headings[h].stars <= y) {
-			for (int e = 0; e < headings[h].elements.length; e++) {
-				for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
+			for (int e = 0; e < headings[h].ebuff.length; e++) {
+				if (spew) { print("\t\t\t\tgetmysourceindexbypropname checking heading[%d].elements[%d] %s...\n",h,e,headings[h].elements[e].name); }
+				for (int o = 0; o < headings[h].elements[e].obuff.length; o++) {
+					if (spew) { print("\t\t\t\t\tgetmysourceindexbypropname checking heading[%d].elements[%d].outputs[%d] %s...\n",h,e,o,headings[h].elements[e].outputs[o].name); }
 					if (headings[h].elements[e].outputs[o].name == n) { 
-						return headings[h].elements[e].outputs[o].id; 
+						if (spew) { print("\t\tgetmysourceindexbypropname returned %d\n",headings[h].elements[e].outputs[o].index); }
+						return headings[h].elements[e].outputs[o].index; 
 					}
 				}
 			}
 		} else { break; }
 	}
-	return 0;
+	if (spew) { print("\t\tgetmysourceindexbypropname found nothing.\n"); }
+	return -1;
 }
 
-uint getmysourcebyvalvar(string n, int g, int y) {
+int getmysourcebyvalvar(string n, int g, int y) {
 	for (int h = g; h >= 0; h--) {
 		if (headings[h].stars <= y) {
 			for (int e = 0; e < headings[h].elements.length; e++) {
 				for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
 					if (headings[h].elements[e].outputs[o].name == n) { 
-						return headings[h].elements[e].outputs[o].id; 
+						return headings[h].elements[e].outputs[o].index; 
 					}
 				}
 			}
 		} else { break; }
 	}
-	return getmysourceidbyname(n);
+	return getmysourceindexbyname(n);
 }
 
-void crosslinkeverything () {
+// initial linking using orgmode rules:
+// reverse local search for propertydrawer vars, stopping at 1-star heading
+// then global search for name from the 1st heading
+//
+// for non-orgmode [[val:var]] links the search is the same as propertydrawer vars, then global
+void buildpath () {
+	int e = -1;
+	int o = -1;
+	int i = -1;
+	for (int h = 0; h < headings.length; h++) {
+		headings[h].elements = {};
+		for (int b = 0; b < headings[h].ebuff.length; b++) {
+			e = getelementindexbyid(headings[h].ebuff[b]);
+			if (e >= 0) {
+				elements[e].inputs = {};
+				elements[e].outputs = {};
+				headings[h].elements += &elements[e];
+				elements[e].hbuff = headings[h].id;
+				elements[e].owner = &headings[h];
+				for (int c = 0; c < elements[e].ibuff.length; c ++) {
+					i = getinputindexbyid(elements[e].ibuff[c]);
+					if (i >= 0) {
+						elements[e].inputs += &inputs[i];
+						inputs[i].owner = &elements[e];
+						inputs[i].ebuff = elements[e].id;
+					}
+				}
+				for (int d = 0; d < elements[e].obuff.length; d ++) {
+					o = getoutputindexbyid(elements[e].obuff[d]);
+					if (o >= 0) {
+						elements[e].outputs += &outputs[o];
+						outputs[o].owner = &elements[e];
+						outputs[o].ebuff = elements[e].id;
+					}
+				}
+			}
+		}
+	}
+}
+
+void crosslinkio () {
+	uint myo = 0;
+	int e = -1;
+	int o = -1;
+	int i = -1;
+	for (int h = 0; h < headings.length; h++) {
+		for (int b = 0; b < headings[h].ebuff.length; b++) {
+			e = getelementindexbyid(headings[h].ebuff[b]);
+			if (e >= 0) {
+				for (int c = 0; c < elements[e].ibuff.length; c ++) {
+					i = getinputindexbyid(elements[e].ibuff[c]);
+					if (i >= 0) {
+						if (inputs[i].name != null && inputs[i].name != "") {
+							if (inputs[i].org != null && inputs[i].org != "") {
+								if (inputs[i].org.contains("org-entry-get")) {
+// local search for propbin
+									int sq = inputs[i].org.index_of("\"") + 1;
+									int eq = inputs[i].org.last_index_of("\"");
+									if (eq > sq) {
+										myo = getmysourceindexbypropname(inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+									}
+								}
+								if (inputs[i].org.contains("[[val:")) {
+
+// local search for name or propbin. failing that: global name search
+									int sq = inputs[i].org.index_of(":") + 1;
+									int eq = inputs[i].org.last_index_of("]]");
+									myo = getmysourcebyvalvar(inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+								}
+							} else {
+
+// global search for matching nametag name for inputs extracted from scrblock :var strings
+								myo = getmysourceindexbyname(inputs[i].name);
+							}
+							if (myo >= 0) { inputs[i].source = &outputs[myo]; }
+						}
+					}
+				}
+			}
+		}
+	}
+	for (int q = 0; q < outputs.length; q++) {
+		outputs[q].targets = {};
+		outputs[q].ibuff = {};
+	}
+	for (int j = 0; j < inputs.length; j++) {
+		if (inputs[j].source != null) {
+			inputs[j].source.targets += &inputs[j];
+			inputs[j].source.ibuff += inputs[j].id;
+			inputs[j].obuff = inputs[j].source.id;
+		}
+	}
+}
+
+void oldcrosslinkeverything () {
 	uint myo = 0;
 	for (int h = 0; h < headings.length; h++) {
 		for (int e = 0; e < headings[h].elements.length; e++) {
@@ -229,12 +451,15 @@ void crosslinkeverything () {
 				if (headings[h].elements[e].inputs[i].name != null) { 
 					if (headings[h].elements[e].inputs[i].name != "") { 
 						if (headings[h].elements[e].inputs[i].org != null && headings[h].elements[e].inputs[i].org != "") {
+							if (spew) { print("\tcrosscheck: checking input %s org: %s\n",headings[h].elements[e].inputs[i].name, headings[h].elements[e].inputs[i].org); }
 							if (headings[h].elements[e].inputs[i].org.contains("org-entry-get")) {
 
 // local search for propbin
 								int sq = headings[h].elements[e].inputs[i].org.index_of("\"") + 1;
 								int eq = headings[h].elements[e].inputs[i].org.last_index_of("\"");
-								myo = getmysourcebypropname(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+								if (eq > sq) {
+									myo = getmysourceindexbypropname(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+								}
 							}
 							if (headings[h].elements[e].inputs[i].org.contains("[[val:")) {
 
@@ -244,15 +469,24 @@ void crosslinkeverything () {
 								myo = getmysourcebyvalvar(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
 							}
 						} else {
-							myo = getmysourceidbyname(headings[h].elements[e].inputs[i].name);
+							myo = headings[h].elements[e].inputs[i].source.index;
 						}
-						if (myo != 0) { headings[h].elements[e].inputs[i].source = myo; }
+						if (myo != 0) { headings[h].elements[e].inputs[i].source = &outputs[myo]; }
 					}
 				}
 			}
 		}
 	}
+	for (int i = 0; i < inputs.length; i++) {
+		if (inputs[i].source != null) {
+			inputs[i].source.targets += &inputs[i];
+			inputs[i].source.ibuff += inputs[i].id;
+			inputs[i].obuff = inputs[i].source.id;
+		}
+	}
 }
+
+
 
 int findtodoindexbyname (string n, todo[] h) {
 	for (int q = 0; q < h.length; q++) {
@@ -304,11 +538,18 @@ uint findtagidbyname (string n, tag[] h) {
 	return -1;
 }
 
-bool notininputnames (string n, input[] h) {
-	for (int q = 0; q < h.length; q++) {
-		if (h[q].name == n) { return false; }
+bool notininputnames (string n) {
+	for (int q = 0; q < inputs.length; q++) {
+		if (inputs[q].name == n) { return false; }
 	}
 	return true;
+}
+
+bool notinuint(uint n, uint[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (n == h[q]) { return true; }
+	}
+	return false;
 }
 
 bool notintagnames (string n, tag[] h) {
@@ -412,8 +653,6 @@ void addheadertotodosbyindex (int i, uint x) {
 
 // TODO: check for conflicts
 uint makemeahash(string n, int t) {
-	//DateTime dd = new DateTime.now_local();
-	//print("MAKEMEAHASH: hashing %s_%d_%lld ...\n",n,t,GLib.get_real_time());
 	return "%s_%d_%lld".printf(n,t,GLib.get_real_time()).hash();
 }
 
@@ -423,22 +662,15 @@ string makemeauniqueoutputname(string n) {
 	string j = n;
 	if (n.strip() == "") { k = "untitled_output"; j = k; }
 	string[] shorts = {};
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
-				if (headings[h].elements[e].outputs[o].name != null) {
-					if (headings[h].elements[e].outputs[o].name.length > 0) {
-						if (headings[h].elements[e].outputs[o].name[0] == n[0]) {
-							shorts += headings[h].elements[e].outputs[o].name;
-						}
-					}
+	for (int o = 0; o < outputs.length; o++) {
+		if (outputs[o].name != null) {
+			if (outputs[o].name.length > 0) {
+				if (outputs[o].name[0] == n[0]) {
+					shorts += outputs[o].name;
 				}
 			}
 		}
 	}
-	//for( int v = 0; v < shorts.length; v++) {
-	//	print("collected paragraph name: %s\n",shorts[v]);
-	//}
 	int x = 1;
 	if (shorts.length > 0) {
 		int maxout = (shorts.length * shorts.length);
@@ -463,16 +695,14 @@ string makemeauniqueelementname(string n, uint u, string y) {
 	string j = n;
 	if (n.strip() == "") { k = "untitled_%s".printf(y); j = k; }
 	string[] shorts = {};
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			if (headings[h].elements[e].id != u) {
-				if (headings[h].elements[e].type != null) {
-					if (headings[h].elements[e].type == y) {
-						if (headings[h].elements[e].name != null) {
-							if (headings[h].elements[e].name.length > 0) {
-								if (headings[h].elements[e].name[0] == n[0]) {
-									shorts += headings[h].elements[e].name;
-								}
+	for (int e = 0; e < elements.length; e++) {
+		if (elements[e].id != u) {
+			if (elements[e].type != null) {
+				if (elements[e].type == y) {
+					if (elements[e].name != null) {
+						if (elements[e].name.length > 0) {
+							if (elements[e].name[0] == n[0]) {
+								shorts += elements[e].name;
 							}
 						}
 					}
@@ -480,9 +710,6 @@ string makemeauniqueelementname(string n, uint u, string y) {
 			}
 		}
 	}
-	//for( int v = 0; v < shorts.length; v++) {
-	//	print("collected paragraph name: %s\n",shorts[v]);
-	//}
 	int x = 1;
 	if (shorts.length > 0) {
 		int maxout = (shorts.length * shorts.length);
@@ -507,18 +734,14 @@ string renameuniqueoutputname(string n, uint u, string y) {
 	string j = n;
 	if (n.strip() == "") { k = "%s_output".printf(y); j = k; }
 	string[] shorts = {};
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			if (headings[h].elements[e].type != null) {
-				if (headings[h].elements[e].type == y) {
-					for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
-						if (headings[h].elements[e].outputs[o].id != u) {
-							if (headings[h].elements[e].outputs[o].name != null) {
-								if (headings[h].elements[e].outputs[o].name.length > 0) {
-									if (headings[h].elements[e].outputs[o].name[0] == n[0]) {
-										shorts += headings[h].elements[e].outputs[o].name;
-									}
-								}
+	for (int o = 0; o < outputs.length; o++) {
+		if (outputs[o].owner.type != null) {
+			if (outputs[o].owner.type == y) {
+				if (outputs[o].id != u) {
+					if (outputs[o].name != null) {
+						if (outputs[o].name.length > 0) {
+							if (outputs[o].name[0] == n[0]) {
+								shorts += outputs[o].name;
 							}
 						}
 					}
@@ -526,9 +749,6 @@ string renameuniqueoutputname(string n, uint u, string y) {
 			}
 		}
 	}
-	//for( int v = 0; v < shorts.length; v++) {
-	//	print("collected paragraph name: %s\n",shorts[v]);
-	//}
 	int x = 1;
 	if (shorts.length > 0) {
 		int maxout = (shorts.length * shorts.length);
@@ -550,7 +770,7 @@ string renameuniqueoutputname(string n, uint u, string y) {
 bool updatevalvarlinks(string t, int h, int e) {
 	bool oo = false;
 	if (spew) { print("updatevalvarlinks: string =\n%s\n",t); }
-	headings[h].elements[e].inputs = {};
+	deletemyinputs(elements[e].ibuff);
 	if (t.contains("[[val:") && t.contains("]]")) {
 		string chmpme = t;
 		int safeteycheck = 100;
@@ -566,18 +786,21 @@ bool updatevalvarlinks(string t, int h, int e) {
 					string[] cn = ct.split(":");
 					if (cn.length == 2) {
 						if (spew) { print("updatevalvarlinks: checking for %s in inputs\n",cn[1]); }
-						if (notininputnames(cn[1], headings[h].elements[e].inputs)) {
-							input qq = input();
-							qq.org = chmp;
-							qq.defaultv = chmp;
-							qq.name = cn[1];
-							qq.source = getmysourceidbyname(cn[1]);
-							qq.id = makemeahash(qq.name,(headings[h].elements[e].inputs.length + 1));
-							qq.owner = headings[h].elements[e].id;
-							headings[h].elements[e].inputs += qq;
-							chmpme = chmpme.replace(chmp,"");
-							oo = true;
-						}
+						input qq = input();
+						qq.org = chmp;
+						qq.defaultv = chmp;
+						qq.name = cn[1];
+						qq.id = makemeahash(qq.name,(elements[e].inputs.length + 1));
+						inputs += qq;
+						elements[e].inputs += &inputs[(inputs.length - 1)];
+						inputs[(inputs.length - 1)].source = &outputs[(getmysourceindexbyname(cn[1]))];
+						inputs[(inputs.length - 1)].obuff = inputs[(inputs.length - 1)].source.id;
+						inputs[(inputs.length - 1)].owner = &elements[e];
+						inputs[(inputs.length - 1)].ebuff = elements[e].id;
+						elements[e].ibuff += qq.id;
+						elementownsio(e);
+						chmpme = chmpme.replace(chmp,"");
+						oo = true;
 					}
 					if (safeteycheck > 1000) { break; }
 				}
@@ -588,35 +811,36 @@ bool updatevalvarlinks(string t, int h, int e) {
 	return oo;
 }
 
-/* TODO: list input element ids to eval, from selected, in order of execution
 uint[] evalpath (uint[] nn, uint me) {
-	bool allgood = true;
 	int r = 0;
-	while (r < nn.length) {
-		for (int f = 0; f < nn.length; f++) {
-			for (int h = 0; h < headings.length; n++) {
-				if (nodes[n].id == nn[f]) {
-					for(int i = 0; i < nodes[n].input.length; i++) {
-						nn += nodes[n].input[i];
+	uint[] ss = nn;
+	uint[] ee = {};
+	while (r < ss.length) {
+		for (int f = 0; f < ss.length; f++) {
+			for (int h = 0; h < headings.length; h++) {
+				for (int e = 0; e < headings[h].elements.length; e++) {
+					for(int i = 0; i < headings[h].elements[e].outputs.length; i++) {
+						if (headings[h].elements[e].inputs[i].source.id == nn[f]) {
+							if ((headings[h].elements[e].inputs[i].source.id in ss) == false) {
+								ss += headings[h].elements[e].inputs[i].source.id;
+								ee += headings[h].elements[e].id;
+							}
+						}
 					}
 				}
 			}
 			r += 1;
 		}
-		if (r > 10) { break; }
+		if (r > 100) { break; }
 	}
-	uint[] ee = {};
-	for (int n = (nn.length - 1); n >= 0; n--) {
-		allgood = true;
-		for (int e = 0; e < ee.length; e++) {
-			if (ee[e] == nn[n]) { allgood = false; break; }
-		}
-		if (allgood) { ee += nn[n]; }
+	uint[] te = {};
+	for (int j = (ee.length - 1); j > 0; j--) { 
+		if ((ee[j] in te) == false) { te += ee[j]; }
+		print("te[%d] = %u\n",(te.length - 1),te[(te.length - 1)]);
 	}
-	for (int j = 0; j < ee.length; j++) { print("ee[%d] = %u\n",j,ee[j]); }
-	return ee;
+	return te;
 }
-*/
+
 
 int gettodobyid(uint t) {
 	for (int i = 0; i < todos.length; i++) {
@@ -705,10 +929,17 @@ int findexample (int l, int ind, string n) {
 			pp.name = makemeauniqueoutputname(ee.name.concat("_verbatimtext"));
 			pp.id = makemeahash(ee.name, c);
 			pp.value = string.joinv("\n",txt);
-			ee.outputs += pp;
+			pp.ebuff = ee.id;
+			outputs += pp;
+			ee.outputs += &outputs[(outputs.length - 1)];
+			ee.obuff += pp.id;
 			typecount[3] += 1;
-			ee.owner = headings[thisheading].id;
-			headings[thisheading].elements += ee;
+			ee.owner = &headings[hidx];
+			ee.hbuff = headings[hidx].id;
+			elements += ee;
+			headings[hidx].elements += &elements[(elements.length - 1)];
+			headings[hidx].ebuff += ee.id;
+			elementownsio((elements.length - 1));
 			if (spew) { print("[%d]%s\tsuccessfully captured verbatim text\n",c,tabs); }
 			if (spew) { print("[%d]%sfindexample ended.\n",c,tabs); }
 			int64 xtte = GLib.get_real_time();
@@ -726,8 +957,8 @@ int findparagraph (int l, int ind) {
 	int64 phtts = GLib.get_real_time();
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	if (spew) { print("[%d]%sfindparagraph started...\n",l,tabs); }
-	if (spew) { print("[%d]%sheadings[%d].name = %s\n",l,tabs,thisheading,headings[thisheading].name); }
-	if (spew) { print("[%d]%sheadings[%d].id = %u\n",l,tabs,thisheading,headings[thisheading].id); }
+	if (spew) { print("[%d]%sheadings[%d].name = %s\n",l,tabs,hidx,headings[hidx].name); }
+	if (spew) { print("[%d]%sheadings[%d].id = %u\n",l,tabs,hidx,headings[hidx].id); }
 	string txtname = "paragraph_%d".printf(typecount[0]);
 	//if (n == "") { txtname =  "srcblock_%d".printf(typecount[2]); }  // don't NAME paragraphs
 	string[] txt = {};
@@ -755,8 +986,10 @@ int findparagraph (int l, int ind) {
 		pp.name = makemeauniqueoutputname(ee.name.concat("_text"));
 		pp.id = makemeahash(ee.name, c);
 		pp.value = string.joinv("\n",txt);
-		pp.owner = ee.id;
-		ee.outputs += pp;
+		pp.ebuff = ee.id;
+		outputs += pp;
+		ee.outputs += &outputs[(outputs.length - 1)];
+		ee.obuff += pp.id;
 		for (int d = 0; d < txt.length; d++) {
 // minum text size for a [[val:v]] link
 			if (txt[d].length > 9) { 
@@ -782,8 +1015,10 @@ int findparagraph (int l, int ind) {
 								chmp = chmp.replace("]]","");
 								qq.name = chmp.split(":")[1];
 								qq.id = makemeahash(qq.name,c);
-								qq.owner = ee.id;
-								ee.inputs += qq;
+								qq.ebuff = ee.id;
+								inputs += qq;
+								ee.inputs += &inputs[(inputs.length)];
+								ee.ibuff += qq.id;
 								if (spew) { print("[%d]%s\t\t\tstored link ref: %s\n",c,tabs,qq.name); }
 	// suckshit if there's over 100 links in a paragraph
 								if (safeteycheck > 100) { break; }
@@ -794,10 +1029,14 @@ int findparagraph (int l, int ind) {
 				}
 			}
 		}
-		if (spew) { print("[%d]%s\tcapturing owner id: %u\n",c,tabs,headings[thisheading].id); }
-		ee.owner = headings[thisheading].id;
+		if (spew) { print("[%d]%s\tcapturing owner id: %u\n",c,tabs,headings[hidx].id); }
+		ee.hbuff = headings[hidx].id;
+		ee.owner = &headings[hidx];
 		if (spew) { print("[%d]%s\tcapturing element: %s\n",c,tabs,ee.name); }
-		headings[thisheading].elements += ee;
+		elements += ee;
+		headings[hidx].elements += &elements[(elements.length - 1)];
+		headings[hidx].ebuff += ee.id;
+		elementownsio((elements.length - 1));
 		typecount[0] += 1;
 		if (spew) { print("[%d]%s\tsuccessfully captured plain text\n",c,tabs); }
 		if (spew) { print("[%d]%sfindparagraph ended.\n",c,tabs); }
@@ -955,8 +1194,10 @@ int findtable (int l, int ind, string n) {
 					oo.name = makemeauniqueoutputname(tablename.concat("_spreadsheet"));
 					oo.id = makemeahash(oo.name,(tln+rc));
 					oo.value = csv;
-					oo.owner = ee.id;
-					ee.outputs += oo;
+					oo.ebuff = ee.id;
+					outputs += oo;
+					ee.outputs += &outputs[(outputs.length - 1)];
+					ee.obuff += oo.id;
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
 						param ii = param();
@@ -971,8 +1212,10 @@ int findtable (int l, int ind, string n) {
 // org-sbe vals need to be obtained after an eval
 // so we just store its org syntax for now
 								ff.org = themathorgvars[x];
-								ff.owner = ee.id;
-								ee.inputs+= ff;
+								ff.ebuff = ee.id;
+								inputs += ff;
+								ee.inputs += &inputs[(inputs.length - 1)];
+								ee.ibuff += ff.id;
 							}
 						}
 						ii.owner = ee.id;
@@ -984,8 +1227,12 @@ int findtable (int l, int ind, string n) {
 						if (lines[t].strip().has_prefix("#+END_TABLE")){ t = (f + 1); break; }
 					}
 					typecount[4] += 1;
-					ee.owner = headings[thisheading].id;
-					headings[thisheading].elements += ee;
+					ee.owner = &headings[hidx];
+					ee.hbuff = headings[hidx].id;
+					elements += ee;
+					headings[hidx].elements += &elements[(elements.length - 1)];
+					headings[hidx].ebuff += ee.id;
+					elementownsio((elements.length - 1));
 					if (dospew) { print("[%d]%sfindtable captured a table element.\n",t,tabs); }
 					int64 ttte = GLib.get_real_time();
 					if (spew) { print("\nfind table took %f microseconds\n\n",((double) (ttte - ttts)));}
@@ -1127,8 +1374,10 @@ int findsrcblock (int l,int ind, string n) {
 							ip.id = makemeahash(ip.name, b);							// id, probably redundant
 							ip.value = hvars[(p+1)];							// value - volatile
 							ip.defaultv = hvars[(p+1)];						// fallback value
-							ip.owner = ee.id;
-							ee.inputs += ip;
+							ip.ebuff = ee.id;
+							inputs += ip;
+							ee.inputs += &inputs[(inputs.length - 1)];
+							ee.ibuff += ip.id;
 						} else { break; }
 						p += 1;
 					}
@@ -1230,10 +1479,16 @@ int findsrcblock (int l,int ind, string n) {
 		}
 		resblock._chomp();
 		rr.value = resblock;
-		rr.owner = ee.id;
-		ee.outputs += rr;
-		ee.owner = headings[thisheading].id;
-		headings[thisheading].elements += ee;
+		rr.ebuff = ee.id;
+		outputs += rr;
+		ee.outputs += &outputs[(outputs.length - 1)];
+		ee.obuff += rr.id;
+		ee.owner = &headings[hidx];
+		ee.hbuff = headings[hidx].id;
+		elements += ee;
+		headings[hidx].elements += &elements[(elements.length - 1)];
+		headings[hidx].ebuff += ee.id;
+		elementownsio((elements.length - 1));
 		typecount[2] += 1;
 		if (spew) { print("[%d]%sfindsrcblock ended.\n",c,tabs); }
 		int64 stte = GLib.get_real_time();
@@ -1270,8 +1525,12 @@ int findpropbin(int l, int ind) {
 			ee.id = makemeahash(ee.name,l);
 			for (int b = (l + 1); b < lines.length; b++) {
 				if (lines[b].strip() == ":END:") { 
-					ee.owner = headings[thisheading].id;
-					headings[thisheading].elements += ee;
+					ee.owner = &headings[hidx];
+					ee.hbuff = headings[hidx].id;
+					elements += ee;
+					headings[hidx].elements += &elements[(elements.length - 1)];
+					headings[hidx].ebuff += ee.id;
+					elementownsio((elements.length - 1));
 					typecount[1] += 1;
 					if (spew) { print("[%d]%sfindpropbin captured propbin %s\n",b,tabs,ee.name); }
 					if (spew) { print("[%d]%sfindpropbin ended.\n",b,tabs); }
@@ -1285,8 +1544,10 @@ int findpropbin(int l, int ind) {
 					o.name = makemeauniqueoutputname(propparts[1].strip());
 					o.value = propparts[2].strip();
 					o.id = makemeahash(o.name,b);
-					o.owner = ee.id;
-					ee.outputs += o;
+					o.ebuff = ee.id; 
+					outputs += o;
+					ee.outputs += &outputs[(outputs.length - 1)];
+					ee.obuff += o.id;
 					if (spew) { print("[%d]%s\tcaptured property: %s = %s\n",b,tabs,o.name,o.value); }
 				}
 			}
@@ -1413,7 +1674,7 @@ int findheading (int l, int ind) {
 			}
 		}
 		headings += aa;
-		thisheading = (headings.length - 1);
+		hidx = (headings.length - 1);
 		if (spew) { print("[%d]%s\tfindheading captured a heading: %s.\n",l,tabs,aa.name); }
 		if (spew) { print("[%d]%sfindheading ended.\n",(l + 1),tabs); }
 		int64 htte = GLib.get_real_time();
@@ -1443,10 +1704,16 @@ int findname(int l, int ind) {
 			oo.name = makemeauniqueoutputname(lsp[1]);
 			oo.id = makemeahash(oo.name,l);;
 			oo.value = lsp[2];
-			oo.owner = ee.id;
-			ee.outputs += oo;
-			ee.owner = headings[thisheading].id;
-			headings[thisheading].elements += ee;
+			oo.ebuff = ee.id;
+			outputs += oo;
+			ee.outputs += &outputs[(outputs.length - 1)];
+			ee.obuff += oo.id;
+			ee.owner = &headings[hidx];
+			ee.hbuff = headings[hidx].id;
+			elements += ee;
+			headings[hidx].elements += &elements[(elements.length - 1)];
+			headings[hidx].ebuff += ee.id;
+			elementownsio((elements.length - 1));
 			typecount[6] += 1;
 			if (spew) { print("[%d]%s\t\tfindname captured a namevar\n",l,tabs); }
 			if (spew) { print("[%d]%sfindname ended.\n",(l + 1),tabs); }
@@ -1492,7 +1759,7 @@ int searchfortreasure (int l, int ind) {
 	ind += 4;
 	int n = l;
 	if (ls.has_prefix("*")) { n = findheading(l,ind); }
-	if (thisheading >= 0) {
+	if (hidx >= 0) {
 		if (lines[n].strip().has_prefix("*")) { return n; } // bail if rolling into another heading...
 		if(ls.has_prefix(":PROPERTIES:")) { 
 			n = findpropbin(n,ind); 
@@ -1655,12 +1922,11 @@ void loadmemyorg (string defile) {
 			todos = {};
 			lines = {};
 			sel = -1;
-			hidx = 0;
+			hidx = -1;
 
-			thisheading = -1;
 			print("loadmemyorg: headings.length   = %d\n",headings.length);
 			print("loadmemyorg: elements.length   = %d\n",elements.length);
-			print("loadmemyorg: params.length     = %d\n",params.length);
+			//print("loadmemyorg: params.length     = %d\n",params.length);
 			print("loadmemyorg: inputs.length     = %d\n",inputs.length);
 			print("loadmemyorg: outputs.length    = %d\n",outputs.length);
 			print("loadmemyorg: tags.length       = %d\n",tags.length);
@@ -1696,23 +1962,22 @@ void loadmemyorg (string defile) {
 				i = searchfortreasure(i,1);
 			}
 			if(spew) { print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n\n",headings.length,typecount[5],typecount[1],typecount[2]); }
-			int64 chxts = GLib.get_real_time();
-			crosslinkeverything();
-			int64 chxte = GLib.get_real_time();
-			if (spew) { print("\ncrosslink took %f microseconds\n\n",((double) (chxte - chxts)));}
-			if (headings.length > 0) { sel = headings[0].id; hidx = 0; }
-			if (spew) { print("checking elements...\n"); }
-			for (int h = 0; h < headings.length; h++) {
-				print("heading %s has %d elements\n",headings[h].name,headings[h].elements.length);
-				for (int e = 0; e < headings[h].elements.length; e++) {
-					print("\t\telement %s is of type %s\n",headings[h].elements[e].name,headings[h].elements[e].type);
-					print("\t\telement %s has %d inputs\n",headings[h].elements[e].name,headings[h].elements[e].inputs.length);
-					print("\t\telement %s has %d outputs\n",headings[h].elements[e].name,headings[h].elements[e].outputs.length);
-					print("\t\telement %s has %d params\n",headings[h].elements[e].name,headings[h].elements[e].params.length);
-				} 
+			if (headings.length > 0) {
+				indexheadings();
+				indexelements();
+				indexinputs();
+				indexoutputs();
+				if (spew) { print("loadmemyorg crosslink starting....\n"); }
+				int64 cxts = GLib.get_real_time();
+				buildpath();
+				crosslinkio();
+				int64 cxte = GLib.get_real_time();
+				if (spew) { print("\ncrosslink took %f microseconds\n\n",((double) (cxte - cxts)));}
+				sel = headings[0].id;
 			}
 		} else { print("Error: orgfile was empty.\n"); }
 	} else { print("Error: couldn't find orgfile.\n"); }
+	if (spew) { print("loadmemyorg finsished.\n"); }
 }
 
 void restartui(int ww) {
@@ -1772,11 +2037,11 @@ public class OutputRow : Gtk.Box {
 	private bool edited;
 	private string evalmyparagraph(int h,int e,int o) {
 		// para eval goes here
-		string v = headings[h].elements[e].outputs[o].value;
-		int[,] tdif = new int[headings[h].elements[e].inputs.length,2];
-		for (int i = 0; i < headings[h].elements[e].inputs.length; i++) {
-			string k = headings[h].elements[e].inputs[i].defaultv;
-			string n = getmysourcevalbyid(headings[h].elements[e].inputs[i].source);
+		string v = elements[e].outputs[o].value;
+		int[,] tdif = new int[elements[e].inputs.length,2];
+		for (int i = 0; i < elements[e].inputs.length; i++) {
+			string k = elements[e].inputs[i].defaultv;
+			string n = elements[e].inputs[i].source.value;
 			if (k != "" && n != "") {
 				int aa = v.index_of(k) + 1; //print("aa = %d\n",aa);
 				v = v.replace(k,n);
@@ -1787,34 +2052,10 @@ public class OutputRow : Gtk.Box {
 		mydiffs = tdif;
 		return v;
 	}
-	private void refreshthisheadingelementinputs (int h, uint x, string n) {
-// ModalBox/box(content)/ParamBox/scrolledWindow(pscroll)/box(pbox)/ElementBox/box(parabox)/box(paraoutputox)/box(paraoutputlistbox)/this.oututcontainer
-		if (doup == false) {
-			ElementBox l = (ElementBox) this.parent.parent.parent.parent.parent.get_first_child();
-			while (l != null) {
-				if (l.type == "paragraph") {
-					print("found paragraph element: %s\n",l.name);
-					if (headings[h].elements[l.index].inputs.length > 0) {
-						InputRow i = (InputRow) l.elminputlistbox.get_first_child();
-						while (i != null) {
-							print("\tfound paragraph element input: %s at index %d\n", i.name, i.index);
-							if (headings[h].elements[l.index].inputs[i.index].source == x) {
-								headings[h].elements[l.index].inputs[i.index].name = n;
-								print("\t\trenaming input: %s to %s\n", i.name, headings[h].elements[l.index].inputs[i.index].name);
-								i.inputvar.set_text(n);
-							}
-							i = (InputRow) i.get_next_sibling();
-						}
-					}
-				}
-				l = (ElementBox) l.get_next_sibling();
-			}
-		}
-	}
 	public OutputRow (int e, int idx) {
 		print("OUTPUTROW: started (%d, %d)\n",e,idx);
 		edited = false;
-		if (idx < headings[hidx].elements[e].outputs.length) {
+		if (idx < elements[e].outputs.length) {
 			outputvar = new Gtk.Entry();
 			lblcsp = new Gtk.CssProvider();
 			lblcss = ".xx { color: %s; }".printf(sbsel);
@@ -1827,17 +2068,17 @@ public class OutputRow : Gtk.Box {
 			outputvar.margin_start = 0;
 			outputvar.margin_end = 0;
 			outputvar.hexpand = true;
-			outputvar.set_text(headings[hidx].elements[e].outputs[idx].name);
+			outputvar.set_text(elements[e].outputs[idx].name);
 			outputcontainer = new Gtk.Box(VERTICAL,4);
 			outputcontainer.hexpand = true;
 			entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbhil,sbsel);
 
 // one-liners
-			if (headings[hidx].elements[e].type == "nametag" || headings[hidx].elements[e].type == "propertydrawer") {
+			if (elements[e].type == "nametag" || elements[e].type == "propertydrawer") {
 				outputcontainer.set_orientation(HORIZONTAL);
 				outputcontainer.spacing = 4;
 				outputval = new Gtk.Entry();
-				outputval.set_text(headings[hidx].elements[e].outputs[idx].value);
+				outputval.set_text(elements[e].outputs[idx].value);
 				outputval.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
 				outputval.get_style_context().add_class("xx");
 				outputval.hexpand = true;
@@ -1851,12 +2092,10 @@ public class OutputRow : Gtk.Box {
 			outputvar.changed.connect(() => {
 				if (doup) {
 					doup = false;
-					//print("this element name is %s\n",headings[hidx].elements[idx].name);
 					if (outputvar.text.strip() != "") {
-						string nn = renameuniqueoutputname(outputvar.text,headings[hidx].elements[e].outputs[idx].id,headings[hidx].elements[e].type);
+						string nn = renameuniqueoutputname(outputvar.text,elements[e].outputs[idx].id,elements[e].type);
 						nn = nn.strip();
-						headings[hidx].elements[e].outputs[idx].name = nn;
-						//refreshthisheadingelementinputs(hidx,headings[hidx].elements[e].outputs[idx].id,nn);
+						elements[e].outputs[idx].name = nn;
 					}
 					doup = true;
 				}
@@ -1867,14 +2106,14 @@ public class OutputRow : Gtk.Box {
 				if (doup) {
 					doup = false;
 					if (outputval.text.strip() != "") {
-						headings[hidx].elements[e].outputs[idx].value = outputval.text.strip();
+						elements[e].outputs[idx].value = outputval.text.strip();
 					}
 					doup = true;
 				}
 			});
 
 // editable multiline text outputs
-			if (headings[hidx].elements[e].type == "paragraph" || headings[hidx].elements[e].type == "example" || headings[hidx].elements[e].type == "srcblock") {
+			if (elements[e].type == "paragraph" || elements[e].type == "example" || elements[e].type == "srcblock") {
 				outputsubrow = new Gtk.Box(HORIZONTAL,4);
 				outputsubrow.append(outputvar);
 				outputscrollbox = new Gtk.Box(VERTICAL,10);
@@ -1883,7 +2122,7 @@ public class OutputRow : Gtk.Box {
 				outputvaltextbufftags = new Gtk.TextTagTable();
 				outputvaltextbuff = new GtkSource.Buffer(outputvaltextbufftags);
 				outputvaltext = new GtkSource.View.with_buffer(outputvaltextbuff);
-				outputvaltext.buffer.set_text(headings[hidx].elements[e].outputs[idx].value);
+				outputvaltext.buffer.set_text(elements[e].outputs[idx].value);
 				outputvaltext.accepts_tab = true;
 				outputvaltext.set_monospace(true);
 				outputvaltext.tab_width = 2;
@@ -1904,13 +2143,13 @@ public class OutputRow : Gtk.Box {
 // edit
 				outputvaltext.buffer.changed.connect(() => {
 					if (doup) {
-						headings[hidx].elements[e].outputs[idx].value = outputvaltext.buffer.text;
+						elements[e].outputs[idx].value = outputvaltext.buffer.text;
 						edited = true;
 					}
 				});
 
 // refresh inputs for paragraph
-				if (headings[hidx].elements[e].type == "paragraph") {
+				if (elements[e].type == "paragraph") {
 					outputvalevc = new Gtk.EventControllerFocus();
 					outputvaltext.add_controller(outputvalevc);
 					outputvalevc.leave.connect(() => {
@@ -1924,7 +2163,7 @@ public class OutputRow : Gtk.Box {
 								while (pbox.elminputlistbox.get_first_child() != null) {
 									pbox.elminputlistbox.remove(pbox.elminputlistbox.get_first_child());
 								}
-								for (int i = 0; i < headings[hidx].elements[e].inputs.length; i++) {
+								for (int i = 0; i < elements[e].inputs.length; i++) {
 									InputRow elminputrow = new InputRow(e,i);
 									pbox.elminputlistbox.append(elminputrow);
 								}
@@ -1944,7 +2183,7 @@ public class OutputRow : Gtk.Box {
 				outputvalmaxi.icon_name = "view-fullscreen";
 
 // paragraph is a special case as it may require eval, but isn't a param that creates an output like srcblock...
-				if (headings[hidx].elements[e].type == "paragraph") {
+				if (elements[e].type == "paragraph") {
 					print("OUTPUTROW:\tadding paragraph eval button...\n");
 					outputshowval = new Gtk.ToggleButton();
 					outputshowval.icon_name = "user-invisible";
@@ -1978,7 +2217,7 @@ public class OutputRow : Gtk.Box {
 							}
 							//ouvcss = ".xx { background: #FF000020; }"; ouvcsp.load_from_data(ouvcss.data);
 						} else {
-							outputvaltext.buffer.set_text(headings[hidx].elements[e].outputs[idx].value);
+							outputvaltext.buffer.set_text(elements[e].outputs[idx].value);
 							//ouvcss = ".xx { background: #00FFFF20; }"; ouvcsp.load_from_data(ouvcss.data);
 							outputshowval.icon_name = "user-invisible";
 						}
@@ -2037,14 +2276,14 @@ public class OutputRow : Gtk.Box {
 			outputcontainer.margin_start = 0;
 			outputcontainer.margin_end = 0;
 			outputcontainer.margin_bottom = 0;
-			if (headings[hidx].elements[e].type == "nametag" || headings[hidx].elements[e].type == "propertydrawer") {
+			if (elements[e].type == "nametag" || elements[e].type == "propertydrawer") {
 				outputcontainer.margin_start = 4;
 				outputcontainer.margin_end = 4;
 				outputcontainer.margin_bottom = 4;
 			}
 
 // some elements can't edit outputs here
-			if (headings[hidx].elements[e].type != "paragraph" && headings[hidx].elements[e].type != "table") {
+			if (elements[e].type != "paragraph" && elements[e].type != "table") {
 				print("add output overrides here\n");
 			}
 			oupcsp = new Gtk.CssProvider();
@@ -2057,6 +2296,192 @@ public class OutputRow : Gtk.Box {
 			this.margin_end = 0;
 			this.margin_bottom = 0;
 			this.append(outputcontainer);
+		}
+	}
+}
+
+public class ParamRow : Gtk.Box {
+	private Gtk.Entry paramvar;
+	private Gtk.Box paramcontainer;
+	private Gtk.Entry paramval;
+	private Gtk.Button parameval;
+	private string prmcss;
+	private Gtk.CssProvider prmcsp;
+	private Gtk.TextTagTable paramvaltextbufftags;
+	private GtkSource.Buffer paramvaltextbuff;
+	private GtkSource.View paramvaltext;
+	private Gtk.ScrolledWindow paramvalscroll;
+	private Gtk.Box paramscrollbox;
+	private Gtk.Box paramsubrow;
+	private Gtk.TextTag paramvaltextbufftag;
+	private int[,] mydiffs;
+	private Gtk.ToggleButton paramvalmaxi;
+	private Gtk.DragSource oututrowdragsource;
+	private Gtk.EventControllerFocus paramvalevc;
+	private bool edited;
+	public ParamRow (int e, int idx) {
+		print("PARAMROW: started (%d, %d)\n",e,idx);
+		edited = false;
+		if (idx < elements[e].params.length) {
+			paramvar = new Gtk.Entry();
+			paramvar.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			paramvar.get_style_context().add_class("xx");
+			paramvar.margin_start = 0;
+			paramvar.margin_end = 0;
+			paramvar.hexpand = true;
+			paramvar.set_text(elements[e].params[idx].name);
+			paramcontainer = new Gtk.Box(VERTICAL,4);
+			paramcontainer.hexpand = true;
+			entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbhil,sbsel);
+
+// editable multiline text params
+			if (elements[e].type == "srcblock") {
+				paramsubrow = new Gtk.Box(HORIZONTAL,4);
+				paramsubrow.append(paramvar);
+				paramscrollbox = new Gtk.Box(VERTICAL,10);
+				paramvalscroll = new Gtk.ScrolledWindow();
+				paramvalscroll.height_request = 200;
+				paramvaltextbufftags = new Gtk.TextTagTable();
+				paramvaltextbuff = new GtkSource.Buffer(paramvaltextbufftags);
+				paramvaltext = new GtkSource.View.with_buffer(paramvaltextbuff);
+				paramvaltext.buffer.set_text(elements[e].params[idx].value);
+				paramvaltext.accepts_tab = true;
+				paramvaltext.set_monospace(true);
+				paramvaltext.tab_width = 2;
+				paramvaltext.indent_on_tab = true;
+				paramvaltext.indent_width = 4;
+				paramvaltext.show_line_numbers = true;
+				paramvaltext.highlight_current_line = true;
+				paramvaltext.vexpand = true;
+				paramvaltext.hexpand = true;
+				paramvaltext.top_margin = 0;
+				paramvaltext.left_margin = 0;
+				paramvaltext.right_margin = 0;
+				paramvaltext.bottom_margin = 0;
+				paramvaltext.space_drawer.enable_matrix = true;
+				paramvaltextbuff.set_highlight_syntax(true);
+				paramvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("Adwaita-gifded"));
+
+// edit
+				paramvaltext.buffer.changed.connect(() => {
+					if (doup) {
+						elements[e].params[idx].value = paramvaltext.buffer.text;
+						edited = true;
+					}
+				});
+
+
+// expand toggle
+				paramvalmaxi = new Gtk.ToggleButton();
+				paramvalmaxi.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paramvalmaxi.get_style_context().add_class("xx");
+				paramvalmaxi.icon_name = "view-fullscreen";
+
+// paragraph is a special case as it may require eval, but isn't a param that creates an param like srcblock...
+				if (elements[e].type == "paragraph") {
+					print("PARAMROW:\tadding paragraph eval button...\n");
+					parameval = new Gtk.Button();
+					parameval.icon_name = "media-playback-start";
+					parameval.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+					parameval.get_style_context().add_class("xx");
+					parameval.clicked.connect(() => {
+						doup = false;
+						uint[] deps = {};
+						for (int i = 0; i < elements[e].inputs.length; i++) {
+							deps += elements[e].inputs[i].id;
+						}
+						uint[] q = evalpath(deps,elements[e].id);
+						string ctyp = ""; 
+						string cmd = "";
+						//string[,] flg = {};
+						for (int p = 0; p < elements[e].params.length; p++) {
+							if (elements[e].params[p].name == "type") {
+								ctyp = elements[e].params[p].value;
+							}
+						}
+						switch (ctyp) {
+							case "vala"		: cmd = "valac"; break;
+							case "python"	: cmd = "python"; break;
+							case "shell"	: cmd = "sh"; break;
+							case "rebol3"	: cmd = "r3"; break;
+							default	: break;
+						}
+						
+						//string paramresult = evalsrcparam(hidx,e,idx,paramvaltext.buffer.text,cmd);
+						doup = true;
+					});
+				}
+				paramsubrow.margin_top = 0;
+				paramsubrow.margin_end = 4;
+				paramsubrow.margin_start = 4;
+				paramsubrow.margin_bottom = 0;
+				paramsubrow.append(paramvalmaxi);
+				paramvalscroll.set_child(paramvaltext);
+				//paramscrollbox.append(paramvalscroll);
+				paramvaltext.vexpand = true;
+				//paramvalscroll.height_request = 200;
+				//paramscrollbox.vexpand = true;
+				//paramscrollbox.margin_top = 0;
+				//paramscrollbox.margin_end = 0;
+				//paramscrollbox.margin_start = 0;
+				//paramscrollbox.margin_bottom = 0;
+				paramcontainer.append(paramsubrow);
+				paramcontainer.append(paramvalscroll);
+				paramvalmaxi.toggled.connect(() => {
+				//pbsw = (Gtk.ScrolledWindow) this.parent.parent.parent.parent.parent.parent.parent;
+				//pbswp = (ParamBox) pbsw.parent;
+// ModalBox/box(content)/ParamBox/scrolledWindow(pscroll)/box(pbox)/ElementBox/box(parabox)/box(paraparamox)/box(paraparamlistbox)/this.oututcontainer
+//                          ^            ^                                                                                                       ^
+//                       container     swapme                                                                                                  withme
+// targ = this.parent.parent.parent.parent.parent
+// src = this.paramcontainer
+					//print("pbswp.name = %s\n",pbswp.name);
+					if(paramvalmaxi.active) {
+						paramcontainer.unparent();
+						this.parent.parent.parent.parent.parent.parent.parent.set_visible(false);
+						//pbsw.set_visible(false);
+						//paramcontainer.set_parent(pbswp);
+						paramcontainer.set_parent(this.parent.parent.parent.parent.parent.parent.parent.parent);
+						paramscrollbox.vexpand = true;
+						paramcontainer.vexpand = true;
+						paramvalmaxi.icon_name = "view-restore";
+					} else {
+						paramcontainer.unparent();
+						//pbsw.set_visible(true);
+						this.parent.parent.parent.parent.parent.parent.parent.set_visible(true);
+						//pbsw.show();
+						paramscrollbox.vexpand = false;
+						paramcontainer.vexpand = false;
+						paramcontainer.set_parent(this);
+						paramvalmaxi.icon_name = "view-fullscreen";
+					}
+				});
+			}
+			paramcontainer.vexpand = false;
+			paramcontainer.margin_top = 4;
+			paramcontainer.margin_start = 0;
+			paramcontainer.margin_end = 0;
+			paramcontainer.margin_bottom = 0;
+			if (elements[e].type == "nametag" || elements[e].type == "propertydrawer") {
+				paramcontainer.margin_start = 4;
+				paramcontainer.margin_end = 4;
+				paramcontainer.margin_bottom = 4;
+			}
+
+// some elements can't edit params here
+			if (elements[e].type != "paragraph" && elements[e].type != "table") {
+				print("add param overrides here\n");
+			}
+			prmcsp = new Gtk.CssProvider();
+			prmcss = ".xx { background: %s;}".printf(sbhil);
+			prmcsp.load_from_data(prmcss.data);
+			this.get_style_context().add_provider(prmcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			this.get_style_context().add_class("xx");
+			this.margin_top = 0;
+			this.margin_start = 0;
+			this.margin_end = 0;
+			this.margin_bottom = 0;
+			this.append(paramcontainer);
 		}
 	}
 }
@@ -2081,8 +2506,8 @@ public class InputRow : Gtk.Box {
 	public InputRow (int e, int idx) {
 		print("INPUTROW: started (%d, %d)\n",e,idx);
 		index = idx;
-		if (idx < headings[hidx].elements[e].inputs.length) {
-			name = headings[hidx].elements[e].inputs[idx].name;
+		if (idx < elements[e].inputs.length) {
+			name = elements[e].inputs[idx].name;
 			inputvar = new Gtk.Label(null);
 			lblcsp = new Gtk.CssProvider();
 			lblcss = ".xx { color: %s; }".printf(sbsel);
@@ -2090,14 +2515,14 @@ public class InputRow : Gtk.Box {
 			inputvar.get_style_context().add_provider(lblcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			inputvar.get_style_context().add_class("xx");
 			inputvar.margin_start = 10;
-			inputvar.set_text(headings[hidx].elements[e].inputs[idx].name);
+			inputvar.set_text(elements[e].inputs[idx].name);
 			inputdefvar = new Gtk.Entry();
 			entcsp = new Gtk.CssProvider();
 			entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbshd,sbsel);
 			entcsp.load_from_data(entcss.data);
 			inputdefvar.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
 			inputdefvar.get_style_context().add_class("xx");
-			inputdefvar.set_text(headings[hidx].elements[e].inputs[idx].defaultv);
+			inputdefvar.set_text(elements[e].inputs[idx].defaultv);
 			inputdefvar.hexpand = true;
 			inputshowval = new Gtk.ToggleButton();
 			inputshowval.icon_name = "user-invisible";
@@ -2113,12 +2538,12 @@ public class InputRow : Gtk.Box {
 			inputdefvar.get_style_context().add_class("xx");
 			inputshowval.toggled.connect(() => {
 				if (inputshowval.active) {
-					string inval = getmysourcevalbyid(headings[hidx].elements[e].inputs[idx].source);
+					string inval = elements[e].inputs[idx].source.value;
 					inputdefvar.set_text("(%s)".printf(inval));
 					inputshowval.icon_name = "user-available";
 					invcss = ".xx { background: #FF000020; }"; invcsp.load_from_data(invcss.data);
 				} else {
-					inputdefvar.set_text(headings[hidx].elements[e].inputs[idx].defaultv);
+					inputdefvar.set_text(elements[e].inputs[idx].defaultv);
 					invcss = ".xx { background: #00FFFF20; }"; invcsp.load_from_data(invcss.data);
 					inputshowval.icon_name = "user-invisible";
 				}
@@ -2135,7 +2560,7 @@ public class InputRow : Gtk.Box {
 			inputcontainer.margin_bottom = 4;
 
 // some elements can't edit inputs here
-			if (headings[hidx].elements[e].type != "paragraph" && headings[hidx].elements[e].type != "table") {
+			if (elements[e].type != "paragraph" && elements[e].type != "table") {
 				print("add input overrides here\n");
 			}
 			inpcsp = new Gtk.CssProvider();
@@ -2193,18 +2618,18 @@ public class ElementBox : Gtk.Box {
 	private Gtk.CssProvider lblcsp;
 	public ElementBox (int idx, string typ) {
 		print("ELEMENTBOX: started (%d)\n",idx);
-		if (idx < headings[hidx].elements.length) {
+		if (idx < elements.length) {
 			this.index = idx;
-			this.type = headings[hidx].elements[idx].type;
-			this.name = headings[hidx].elements[idx].name; 
-			print("ELEMENTBOX:\tfound a %s element: %s\n",headings[hidx].elements[idx].type,headings[hidx].elements[idx].name);
+			this.type = elements[idx].type;
+			this.name = elements[idx].name; 
+			print("ELEMENTBOX:\tfound a %s element: %s\n",elements[idx].type,elements[idx].name);
 			elmbox = new Gtk.Box(VERTICAL,4);
 			elmtitlebar = new Gtk.Box(HORIZONTAL,0);
 			elmtitlebar.margin_top = 5;
 			elmtitlebar.margin_bottom = 5;
 			elmtitlebar.margin_start = 5;
 			elmtitlebar.margin_end = 5;
-			elmtitlelabel = new Gtk.Label("%s: %s".printf(headings[hidx].elements[idx].type,headings[hidx].elements[idx].name));
+			elmtitlelabel = new Gtk.Label("%s: %s".printf(elements[idx].type,elements[idx].name));
 			lblcsp = new Gtk.CssProvider();
 			lblcss = ".xx { color: %s; }".printf(sbsel);
 			lblcsp.load_from_data(lblcss.data);
@@ -2249,17 +2674,16 @@ public class ElementBox : Gtk.Box {
 			elmname.get_style_context().add_class("xx");
 			this.append(elmtitlebar);
 			elmbox.append(elmnamebar);
-			elmname.text = headings[hidx].elements[idx].name;
+			elmname.text = elements[idx].name;
 			this.name = elmname.text;
 			elmname.activate.connect(() => {
 				doup = false;
-				//print("this element name is %s\n",headings[hidx].elements[idx].name);
-				string nn = makemeauniqueelementname(elmname.text,headings[hidx].elements[idx].id, headings[hidx].elements[idx].type);
+				string nn = makemeauniqueelementname(elmname.text,elements[idx].id,elements[idx].type);
 				elmname.text = nn;
-				headings[hidx].elements[idx].name = nn;
+				elements[idx].name = nn;
 				doup = true;
 			});
-			if (headings[hidx].elements[idx].inputs.length > 0) {
+			if (elements[idx].inputs.length > 0) {
 				elminputbox = new Gtk.Box(VERTICAL,4);
 				elminputcontrolbox = new Gtk.Box(HORIZONTAL,4);
 				elminputlistbox = new Gtk.Box(VERTICAL,0);
@@ -2298,8 +2722,8 @@ public class ElementBox : Gtk.Box {
 				inpcsp.load_from_data(inpcss.data);
 				elminputbox.get_style_context().add_provider(inpcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				elminputbox.get_style_context().add_class("xx");
-				print("ELEMENTBOX:\tfetching %d inputs...\n",headings[hidx].elements[idx].inputs.length);
-				for (int i = 0; i < headings[hidx].elements[idx].inputs.length; i++) {
+				print("ELEMENTBOX:\tfetching %d inputs...\n",elements[idx].inputs.length);
+				for (int i = 0; i < elements[idx].inputs.length; i++) {
 					InputRow elminputrow = new InputRow(idx,i);
 					elminputlistbox.append(elminputrow);
 				}
@@ -2311,9 +2735,9 @@ public class ElementBox : Gtk.Box {
 				elminputbox.margin_end = 10;
 				elmbox.append(elminputbox);
 			} else {
-				print("ELEMENTBOX: element %s has %d inputs\n",headings[hidx].elements[idx].name, headings[hidx].elements[idx].inputs.length);
+				print("ELEMENTBOX: element %s has %d inputs\n",elements[idx].name,elements[idx].inputs.length);
 			}
-			if (headings[hidx].elements[idx].outputs.length > 0) {
+			if (elements[idx].outputs.length > 0) {
 				elmoutputbox = new Gtk.Box(VERTICAL,4);
 				elmoutputcontrolbox = new Gtk.Box(HORIZONTAL,10);
 				elmoutputlistbox = new Gtk.Box(VERTICAL,0);
@@ -2352,8 +2776,8 @@ public class ElementBox : Gtk.Box {
 				oupcsp.load_from_data(oupcss.data);
 				elmoutputbox.get_style_context().add_provider(oupcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				elmoutputbox.get_style_context().add_class("xx");
-				print("ELMBOX:\tfetching %d outputs...\n",headings[hidx].elements[idx].outputs.length);
-				for (int i = 0; i < headings[hidx].elements[idx].outputs.length; i++) {
+				print("ELMBOX:\tfetching %d outputs...\n",elements[idx].outputs.length);
+				for (int i = 0; i < elements[idx].outputs.length; i++) {
 					OutputRow elmoutputrow = new OutputRow(idx,i);
 					elmoutputlistbox.append(elmoutputrow);
 				}
@@ -2675,10 +3099,10 @@ public class ParamBox : Gtk.Box {
 			print("PARAMBOX: i am hosed.\n");
 			//pbox.append(heb);
 			print("PARAMBOX: header added.\n");
-			for (int e = 0; e < headings[myh].elements.length; e++) {
-				print("PARAMBOX: checking element %s for type....\n",headings[myh].elements[e].name);
-				if (headings[myh].elements[e].type != null) {
-					elm = new ElementBox(e,headings[myh].elements[e].type);
+			for (int e = 0; e < elements.length; e++) {
+				print("PARAMBOX: checking element %s for type....\n",elements[e].name);
+				if (elements[e].owner.id == h) {
+					elm = new ElementBox(e,elements[e].type);
 					pbox.append(elm);
 				}
 			}
@@ -2849,6 +3273,17 @@ public class frownwin : Gtk.ApplicationWindow {
 
 		string out_hi = "#8738A1FF";		// purple
 		string out_lo = "#351C3DFF";
+
+// css
+
+		butcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sblit,sbsel);
+		butcsp = new Gtk.CssProvider();
+
+		entcsp = new Gtk.CssProvider();
+		entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbhil,sbsel);
+
+		lblcsp = new Gtk.CssProvider();
+		lblcss = ".xx { color: %s; }".printf(sbsel);
 
 // interaction states
 
