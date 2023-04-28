@@ -42,6 +42,7 @@ struct input {
 	output* source;
 }
 struct param {
+	string type;					// source, language, flags, results, tangle, table, formula
 	string name;
 	string value;
 	uint owner;
@@ -811,32 +812,28 @@ bool updatevalvarlinks(string t, int h, int e) {
 	return oo;
 }
 
-uint[] evalpath (uint[] nn, uint me) {
+int[] evalpath (int[] nn, int me) {
 	int r = 0;
-	uint[] ss = nn;
-	uint[] ee = {};
+	int[] ss = nn;
+	int[] ee = {};
+	ee += me;
+	ee += inputs[ss[0]].owner.index;
 	while (r < ss.length) {
-		for (int f = 0; f < ss.length; f++) {
-			for (int h = 0; h < headings.length; h++) {
-				for (int e = 0; e < headings[h].elements.length; e++) {
-					for(int i = 0; i < headings[h].elements[e].outputs.length; i++) {
-						if (headings[h].elements[e].inputs[i].source.id == nn[f]) {
-							if ((headings[h].elements[e].inputs[i].source.id in ss) == false) {
-								ss += headings[h].elements[e].inputs[i].source.id;
-								ee += headings[h].elements[e].id;
-							}
-						}
-					}
-				}
+		print("evalpath: finding sources of %s\n",inputs[r].name);
+		if (inputs[r].source != null) {
+			print("evalpath:\tfound source: %s\n",inputs[r].source.name);
+			ee += inputs[r].source.owner.index;
+			for(int i = 0; i < inputs[r].source.owner.inputs.length; i++) {
+				ss += inputs[r].source.owner.inputs[i].index;
 			}
-			r += 1;
 		}
+		r += 1;
 		if (r > 100) { break; }
 	}
-	uint[] te = {};
+	int[] te = {};
 	for (int j = (ee.length - 1); j > 0; j--) { 
 		if ((ee[j] in te) == false) { te += ee[j]; }
-		print("te[%d] = %u\n",(te.length - 1),te[(te.length - 1)]);
+		print("te[%d] = %s\n",(te.length - 1),elements[(te[(te.length - 1)])].name);
 	}
 	return te;
 }
@@ -1201,6 +1198,7 @@ int findtable (int l, int ind, string n) {
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
 						param ii = param();
+						ii.type = "formula";
 						ii.name = tablename.concat("_formulae");
 						ii.value = fml;
 						if (themathvars.length > 0 && themathvars.length == themathorgvars.length) {
@@ -1280,6 +1278,7 @@ int findsrcblock (int l,int ind, string n) {
 		}
 		src._chomp();
 		param cc = param();
+		cc.type = "source";
 		cc.name = nwn.concat("_code");
 		cc.value = src;
 		cc.owner = ee.id;
@@ -1294,7 +1293,8 @@ int findsrcblock (int l,int ind, string n) {
 			if (hpt[1] != null) { 
 				if (hpt[1] != "") {
 					param tt = param();
-					tt.name = "type";
+					tt.type = "language";
+					tt.name = "language";
 					tt.value = hpt[1];
 					tt.owner = ee.id;
 					ee.params += tt;
@@ -1419,6 +1419,7 @@ int findsrcblock (int l,int ind, string n) {
 							
 							if (spew) { print("[%d]%s\t\tparam name val pair: %s, %s\n",b,tabs,o[p],o[(p+1)]); }
 							param pp = param();
+							pp.type = o[p];
 							pp.name = o[p];			// name
 							pp.value = o[(p+1)];		// value - volatile
 							pp.owner = ee.id;
@@ -2035,24 +2036,32 @@ public class OutputRow : Gtk.Box {
 	private Gtk.DragSource oututrowdragsource;
 	private Gtk.EventControllerFocus outputvalevc;
 	private bool edited;
+	public uint elementid;
+	public uint outputid;
 	private string evalmyparagraph(int h,int e,int o) {
-		// para eval goes here
-		string v = elements[e].outputs[o].value;
-		int[,] tdif = new int[elements[e].inputs.length,2];
-		for (int i = 0; i < elements[e].inputs.length; i++) {
-			string k = elements[e].inputs[i].defaultv;
-			string n = elements[e].inputs[i].source.value;
-			if (k != "" && n != "") {
-				int aa = v.index_of(k) + 1; //print("aa = %d\n",aa);
-				v = v.replace(k,n);
-				int bb = aa + (n.length + 1); //print("bb = %d\n",bb);
-				if (aa < bb) { tdif[i,0] = aa; tdif[i,1] = bb; }
+		int ee = getelementindexbyid(elementid);
+		int oo = getoutputindexbyid(outputid);
+		if (ee >= 0 && oo >= 0) {
+			string v = outputs[oo].value;
+			int[,] tdif = new int[elements[ee].inputs.length,2];
+			for (int i = 0; i < elements[ee].inputs.length; i++) {
+				string k = elements[ee].inputs[i].defaultv;
+				string n = elements[ee].inputs[i].source.value;
+				if (k != "" && n != "") {
+					int aa = v.index_of(k) + 1; //print("aa = %d\n",aa);
+					v = v.replace(k,n);
+					int bb = aa + (n.length + 1); //print("bb = %d\n",bb);
+					if (aa < bb) { tdif[i,0] = aa; tdif[i,1] = bb; }
+				}
 			}
+			mydiffs = tdif;
+			return v;
 		}
-		mydiffs = tdif;
-		return v;
+		return "";
 	}
 	public OutputRow (int e, int idx) {
+		elementid = elements[e].id;
+		outputid = outputs[idx].id;
 		print("OUTPUTROW: started (%d, %d)\n",e,idx);
 		edited = false;
 		if (idx < elements[e].outputs.length) {
@@ -2091,24 +2100,30 @@ public class OutputRow : Gtk.Box {
 // edit output name
 			outputvar.changed.connect(() => {
 				if (doup) {
-					doup = false;
-					if (outputvar.text.strip() != "") {
-						string nn = renameuniqueoutputname(outputvar.text,elements[e].outputs[idx].id,elements[e].type);
-						nn = nn.strip();
-						elements[e].outputs[idx].name = nn;
+					int ee = getelementindexbyid(elementid);
+					if (ee >= 0) {
+						doup = false;
+						if (outputvar.text.strip() != "") {
+							string nn = renameuniqueoutputname(outputvar.text,elements[ee].outputs[idx].id,elements[ee].type);
+							nn = nn.strip();
+							elements[ee].outputs[idx].name = nn;
+						}
+						doup = true;
 					}
-					doup = true;
 				}
 			});
 
 // edit output val one-liner
 			outputval.changed.connect(() => {
 				if (doup) {
-					doup = false;
-					if (outputval.text.strip() != "") {
-						elements[e].outputs[idx].value = outputval.text.strip();
+					int ee = getelementindexbyid(elementid);
+					if (ee >= 0) {
+						doup = false;
+						if (outputval.text.strip() != "") {
+							elements[ee].outputs[idx].value = outputval.text.strip();
+						}
+						doup = true;
 					}
-					doup = true;
 				}
 			});
 
@@ -2319,8 +2334,10 @@ public class ParamRow : Gtk.Box {
 	private Gtk.DragSource oututrowdragsource;
 	private Gtk.EventControllerFocus paramvalevc;
 	private bool edited;
+	public uint elementid;
 	public ParamRow (int e, int idx) {
 		print("PARAMROW: started (%d, %d)\n",e,idx);
+		elementid = elements[e].id;
 		edited = false;
 		if (idx < elements[e].params.length) {
 			paramvar = new Gtk.Entry();
@@ -2334,9 +2351,47 @@ public class ParamRow : Gtk.Box {
 			paramcontainer.hexpand = true;
 			entcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbhil,sbsel);
 
+			if (elements[e].params[idx].type != "source" && elements[e].params[idx].type != "formula" && elements[e].params[idx].type != "table") {
+				paramval = new Gtk.Entry();
+				paramval.set_text(elements[e].params[idx].value);
+				paramvar.changed.connect(() => {
+					if (doup) {
+						int ee = getelementindexbyid(elementid);
+						if (ee >= 0) {
+							if (paramvar.text.strip() != "") {
+								doup = false;
+								elements[e].params[idx].name = paramvar.text.strip();
+								doup = true;
+							}
+						}
+					}
+				});
+				paramval.changed.connect(() => {
+					if (doup) {
+						int ee = getelementindexbyid(elementid);
+						if (ee >= 0) {
+							if (paramval.text.strip() != "") {
+								doup = false;
+								elements[ee].params[idx].value = paramval.text.strip();
+								doup = true;
+							}
+						}
+					}
+				});
+				paramval.hexpand = true;
+				paramcontainer.set_orientation(HORIZONTAL);
+				paramcontainer.append(paramvar);
+				paramcontainer.append(paramval);
+				paramcontainer.vexpand = false;
+				paramcontainer.margin_top = 4;
+				paramcontainer.margin_start = 4;
+				paramcontainer.margin_end = 4;
+				paramcontainer.margin_bottom = 4;
+			}
+			paramsubrow = new Gtk.Box(HORIZONTAL,4);
+
 // editable multiline text params
-			if (elements[e].type == "srcblock") {
-				paramsubrow = new Gtk.Box(HORIZONTAL,4);
+			if (elements[e].params[idx].type == "source") {
 				paramsubrow.append(paramvar);
 				paramscrollbox = new Gtk.Box(VERTICAL,10);
 				paramvalscroll = new Gtk.ScrolledWindow();
@@ -2365,11 +2420,15 @@ public class ParamRow : Gtk.Box {
 // edit
 				paramvaltext.buffer.changed.connect(() => {
 					if (doup) {
-						elements[e].params[idx].value = paramvaltext.buffer.text;
-						edited = true;
+						int ee = getelementindexbyid(elementid);
+						if (ee >= 0) {
+							if (elements[ee].params.length > idx) {
+								elements[ee].params[idx].value = paramvaltext.buffer.text;
+								edited = true;
+							}
+						}
 					}
 				});
-
 
 // expand toggle
 				paramvalmaxi = new Gtk.ToggleButton();
@@ -2377,39 +2436,51 @@ public class ParamRow : Gtk.Box {
 				paramvalmaxi.get_style_context().add_class("xx");
 				paramvalmaxi.icon_name = "view-fullscreen";
 
-// paragraph is a special case as it may require eval, but isn't a param that creates an param like srcblock...
-				if (elements[e].type == "paragraph") {
+// add eval button to src
+				if (elements[e].type == "srcblock") {
 					print("PARAMROW:\tadding paragraph eval button...\n");
 					parameval = new Gtk.Button();
 					parameval.icon_name = "media-playback-start";
 					parameval.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 					parameval.get_style_context().add_class("xx");
 					parameval.clicked.connect(() => {
-						doup = false;
-						uint[] deps = {};
-						for (int i = 0; i < elements[e].inputs.length; i++) {
-							deps += elements[e].inputs[i].id;
-						}
-						uint[] q = evalpath(deps,elements[e].id);
-						string ctyp = ""; 
-						string cmd = "";
-						//string[,] flg = {};
-						for (int p = 0; p < elements[e].params.length; p++) {
-							if (elements[e].params[p].name == "type") {
-								ctyp = elements[e].params[p].value;
+						int ee = getelementindexbyid(elementid);
+						if (ee >= 0) {
+							doup = false;
+							int[] deps = {};
+							for (int i = 0; i < elements[ee].inputs.length; i++) {
+								deps += elements[ee].inputs[i].index;
 							}
+							if (deps.length > 0) {
+								if (spew) { print("PARAMROW:\tsending inputs to evalpath()...\n"); }
+								int[] q = evalpath(deps,elements[ee].index);
+								string ctyp = ""; 
+								string cmd = "";
+								//string[,] flg = {};
+								for (int p = 0; p < elements[ee].params.length; p++) {
+									if (elements[ee].params[p].name == "language") {
+										ctyp = elements[ee].params[p].value;
+									}
+								}
+								switch (ctyp) {
+									case "vala"		: cmd = "valac"; break;
+									case "python"		: cmd = "python"; break;
+									case "shell"		: cmd = "sh"; break;
+									case "rebol3"		: cmd = "r3"; break;
+									default			: break;
+								}
+								for (int p = 0; p < elements[ee].params.length; p++) {
+									if (elements[ee].params[p].type == "flags") {
+										cmd = cmd.concat(elements[ee].params[p].name, " ", elements[ee].params[p].value, " ");
+									}
+								}
+								print("cmd = %s\n",cmd);
+								//string paramresult = evalsrcparam(hidx,e,idx,paramvaltext.buffer.text,cmd);
+							}
+							doup = true;
 						}
-						switch (ctyp) {
-							case "vala"		: cmd = "valac"; break;
-							case "python"	: cmd = "python"; break;
-							case "shell"	: cmd = "sh"; break;
-							case "rebol3"	: cmd = "r3"; break;
-							default	: break;
-						}
-						
-						//string paramresult = evalsrcparam(hidx,e,idx,paramvaltext.buffer.text,cmd);
-						doup = true;
 					});
+					paramsubrow.append(parameval);
 				}
 				paramsubrow.margin_top = 0;
 				paramsubrow.margin_end = 4;
@@ -2456,16 +2527,9 @@ public class ParamRow : Gtk.Box {
 						paramvalmaxi.icon_name = "view-fullscreen";
 					}
 				});
-			}
-			paramcontainer.vexpand = false;
-			paramcontainer.margin_top = 4;
-			paramcontainer.margin_start = 0;
-			paramcontainer.margin_end = 0;
-			paramcontainer.margin_bottom = 0;
-			if (elements[e].type == "nametag" || elements[e].type == "propertydrawer") {
-				paramcontainer.margin_start = 4;
-				paramcontainer.margin_end = 4;
-				paramcontainer.margin_bottom = 4;
+				paramcontainer.margin_start = 0;
+				paramcontainer.margin_end = 0;
+				paramcontainer.margin_bottom = 0;
 			}
 
 // some elements can't edit params here
@@ -2501,11 +2565,13 @@ public class InputRow : Gtk.Box {
 	private string butcss;
 	private Gtk.CssProvider lblcsp;
 	private string lblcss;
-	public int index;
+	public uint elementid;
+	public uint inputid;
 	public string name;
 	public InputRow (int e, int idx) {
 		print("INPUTROW: started (%d, %d)\n",e,idx);
-		index = idx;
+		inputid = inputs[idx].id;
+		elementid = elements[e].id;
 		if (idx < elements[e].inputs.length) {
 			name = elements[e].inputs[idx].name;
 			inputvar = new Gtk.Label(null);
@@ -2537,15 +2603,20 @@ public class InputRow : Gtk.Box {
 			inputdefvar.get_style_context().add_provider(invcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			inputdefvar.get_style_context().add_class("xx");
 			inputshowval.toggled.connect(() => {
-				if (inputshowval.active) {
-					string inval = elements[e].inputs[idx].source.value;
-					inputdefvar.set_text("(%s)".printf(inval));
-					inputshowval.icon_name = "user-available";
-					invcss = ".xx { background: #FF000020; }"; invcsp.load_from_data(invcss.data);
+				int ii = getinputindexbyid(inputid);
+				if (ii >= 0) {
+					if (inputshowval.active) {
+						string inval = inputs[ii].source.value;
+						inputdefvar.set_text("(%s)".printf(inval));
+						inputshowval.icon_name = "user-available";
+						invcss = ".xx { background: #FF000020; }"; invcsp.load_from_data(invcss.data);
+					} else {
+						inputdefvar.set_text(inputs[ii].defaultv);
+						invcss = ".xx { background: #00FFFF20; }"; invcsp.load_from_data(invcss.data);
+						inputshowval.icon_name = "user-invisible";
+					}
 				} else {
-					inputdefvar.set_text(elements[e].inputs[idx].defaultv);
-					invcss = ".xx { background: #00FFFF20; }"; invcsp.load_from_data(invcss.data);
-					inputshowval.icon_name = "user-invisible";
+					this.destroy();
 				}
 			});
 			print("INPUTROW:\tinput label: %s\n",inputvar.get_text());
@@ -2580,7 +2651,7 @@ public class InputRow : Gtk.Box {
 public class ElementBox : Gtk.Box {
 	public string type;
 	public string name;
-	public int index;
+	public uint elementid;
 	private Gtk.Box elmbox;
 	private Gtk.Box elmtitlebar;
 	private Gtk.Label elmtitlelabel;
@@ -2589,37 +2660,38 @@ public class ElementBox : Gtk.Box {
 	private Gtk.Label elmnamelabel;
 	private Gtk.ToggleButton elmfoldbutton;
 	private Gtk.Box elminputbox;
-	private Gtk.Box elminputcontrolbox;
-	private Gtk.Label elminputlabel;
-	private Gtk.ToggleButton elminputfoldbutton;
-	private string inpcss;
-	private Gtk.CssProvider inpcsp;
-	private Gtk.Box elmoutputbox;
-	private Gtk.Box elmoutputcontrolbox;
-	private Gtk.Label elmoutputlabel;
-	private Gtk.ToggleButton elmoutputfoldbutton;
-	private string oupcss;
-	private Gtk.CssProvider oupcsp;
-	private string elmcss;
-	private Gtk.CssProvider elmcsp;
-	private string grpcss;
-	private Gtk.CssProvider grpcsp;
 	public Gtk.Box elminputlistbox;
+	private Gtk.Label elminputlabel;
+	private Gtk.Box elminputcontrolbox;
+	private Gtk.ToggleButton elminputfoldbutton;
+	private Gtk.CssProvider inpcsp;
+	private string inpcss;
+	private Gtk.Box elmoutputbox;
 	private Gtk.Box elmoutputlistbox;
+	private Gtk.Label elmoutputlabel;
+	private Gtk.Box elmoutputcontrolbox;
+	private Gtk.ToggleButton elmoutputfoldbutton;
+	private Gtk.CssProvider oupcsp;
+	private string oupcss;
+	private Gtk.Box elmparambox;
+	private Gtk.Box elmparamlistbox;
+	private Gtk.Label elmparamlabel;
+	private Gtk.Box elmparamcontrolbox;
+	private Gtk.ToggleButton elmparamfoldbutton;
+	private Gtk.CssProvider prmcsp;
+	private string prmcss;
+	private Gtk.CssProvider elmcsp;
+	private string elmcss;
+	private Gtk.CssProvider grpcsp;
+	private string grpcss;
 	private Gtk.DragSource elmdragsource;
 	private Gtk.DropTarget elmdroptarg;
 	private int dox;
 	private int doy;
-	private Gtk.CssProvider entcsp;
-	private string entcss;
-	private Gtk.CssProvider butcsp;
-	private string butcss;
-	private string lblcss;
-	private Gtk.CssProvider lblcsp;
 	public ElementBox (int idx, string typ) {
 		print("ELEMENTBOX: started (%d)\n",idx);
 		if (idx < elements.length) {
-			this.index = idx;
+			this.elementid = elements[idx].id;
 			this.type = elements[idx].type;
 			this.name = elements[idx].name; 
 			print("ELEMENTBOX:\tfound a %s element: %s\n",elements[idx].type,elements[idx].name);
@@ -2677,11 +2749,14 @@ public class ElementBox : Gtk.Box {
 			elmname.text = elements[idx].name;
 			this.name = elmname.text;
 			elmname.activate.connect(() => {
-				doup = false;
-				string nn = makemeauniqueelementname(elmname.text,elements[idx].id,elements[idx].type);
-				elmname.text = nn;
-				elements[idx].name = nn;
-				doup = true;
+				int ee = getelementindexbyid(elementid);
+				if (ee >= 0) {
+					doup = false;
+					string nn = makemeauniqueelementname(elmname.text,elements[idx].id,elements[idx].type);
+					elmname.text = nn;
+					elements[idx].name = nn;
+					doup = true;
+				}
 			});
 			if (elements[idx].inputs.length > 0) {
 				elminputbox = new Gtk.Box(VERTICAL,4);
@@ -2736,6 +2811,60 @@ public class ElementBox : Gtk.Box {
 				elmbox.append(elminputbox);
 			} else {
 				print("ELEMENTBOX: element %s has %d inputs\n",elements[idx].name,elements[idx].inputs.length);
+			}
+			if (elements[idx].params.length > 0) {
+				elmparambox = new Gtk.Box(VERTICAL,4);
+				elmparamcontrolbox = new Gtk.Box(HORIZONTAL,10);
+				elmparamlistbox = new Gtk.Box(VERTICAL,0);
+				elmparamlistbox.margin_top = 0;
+				elmparamlistbox.margin_bottom = 0;
+				elmparamlistbox.margin_start = 0;
+				elmparamlistbox.margin_end = 0;
+				elmparamlabel = new Gtk.Label("Params");
+				elmparamlabel.get_style_context().add_provider(lblcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				elmparamlabel.get_style_context().add_class("xx");
+				elmparamlabel.margin_start = 0;
+				elmparamlabel.hexpand = true;
+				elmparamfoldbutton = new Gtk.ToggleButton();
+				elmparamfoldbutton.icon_name = "go-up";
+				elmparamfoldbutton.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				elmparamfoldbutton.get_style_context().add_class("xx");
+				elmparamfoldbutton.toggled.connect(() => {
+					if (elmparamfoldbutton.active) {
+						elmparamfoldbutton.icon_name = "go-down";
+						elmparamlistbox.visible = false;
+					} else {
+						elmparamfoldbutton.icon_name = "go-up";
+						elmparamlistbox.visible = true;
+					}
+				});
+				elmparamcontrolbox.append(elmparamlabel);
+				elmparamcontrolbox.append(elmparamfoldbutton);
+				elmparambox.append(elmparamcontrolbox);
+				elmparambox.append(elmparamlistbox);
+				elmparamcontrolbox.margin_top = 4;
+				elmparamcontrolbox.margin_bottom = 4;
+				elmparamcontrolbox.margin_start = 4;
+				elmparamcontrolbox.margin_end = 4;
+				prmcsp = new Gtk.CssProvider();
+				prmcss = ".xx { background: %s; box-shadow: 2px 2px 2px #00000066; }".printf(sbhil);
+				prmcsp.load_from_data(prmcss.data);
+				elmparambox.get_style_context().add_provider(prmcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				elmparambox.get_style_context().add_class("xx");
+				print("ELMBOX:\tfetching %d params...\n",elements[idx].params.length);
+				for (int i = 0; i < elements[idx].params.length; i++) {
+					ParamRow elmparamrow = new ParamRow(idx,i);
+					elmparamlistbox.append(elmparamrow);
+				}
+				elmparamlistbox.hexpand = true;
+				elmparambox.hexpand = true;
+				elmparambox.margin_top = 0;
+				elmparambox.margin_bottom = 10;
+				elmparambox.margin_start = 10;
+				elmparambox.margin_end = 10;
+				elmbox.append(elmparambox);
+			} else {
+				print("ELEMENTBOX: element %s has %d params\n",elements[idx].name,elements[idx].params.length);
 			}
 			if (elements[idx].outputs.length > 0) {
 				elmoutputbox = new Gtk.Box(VERTICAL,4);
