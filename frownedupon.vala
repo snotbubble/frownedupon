@@ -44,8 +44,8 @@ struct input {
 struct param {
 	string type;					// source, language, flags, results, tangle, table, formula
 	string name;
+	uint id;
 	string value;
-	uint owner;
 }
 struct element {
 	string			name;			// can be whatever, but try to autoname to be unique
@@ -597,6 +597,14 @@ void toggleheadertagbyindex(int h, uint t) {
 	} else {
 		headings[h].tags = removeidfromtags(t,headings[h].tags);
 	}
+}
+
+int getparamindexbyid(int e, uint x) {
+	if (spew) { print("getparamindexbyid(%d,%u)",e,x); }
+	for(int p = 0; p < elements[e].params.length; p++){
+		if (elements[e].params[p].id == x) { return p; }
+	}
+	return -1;
 }
 
 void addheadertotagsbyindex (int i, int h) {
@@ -1200,6 +1208,7 @@ int findtable (int l, int ind, string n) {
 						param ii = param();
 						ii.type = "formula";
 						ii.name = tablename.concat("_formulae");
+						ii.id = makemeahash(ii.name,(tln+rc));
 						ii.value = fml;
 						if (themathvars.length > 0 && themathvars.length == themathorgvars.length) {
 							for(int x = 0; x < themathvars.length; x++) {
@@ -1216,7 +1225,6 @@ int findtable (int l, int ind, string n) {
 								ee.ibuff += ff.id;
 							}
 						}
-						ii.owner = ee.id;
 						ee.params += ii;
 						t = f;
 					}
@@ -1280,8 +1288,8 @@ int findsrcblock (int l,int ind, string n) {
 		param cc = param();
 		cc.type = "source";
 		cc.name = nwn.concat("_code");
+		cc.id = makemeahash(cc.name,b);
 		cc.value = src;
-		cc.owner = ee.id;
 		ee.params += cc;
 		if (spew) { print("[%d]%s\tsrc block code stored as parameter: %s\n",b,tabs,cc.name); }
 
@@ -1295,8 +1303,8 @@ int findsrcblock (int l,int ind, string n) {
 					param tt = param();
 					tt.type = "language";
 					tt.name = "language";
+					tt.id = makemeahash(tt.name,b);
 					tt.value = hpt[1];
-					tt.owner = ee.id;
 					ee.params += tt;
 					if (spew) { print("[%d]%s\t\tstored type parameter: %s\n",b,tabs,hpt[1]); }
 				}
@@ -1421,8 +1429,8 @@ int findsrcblock (int l,int ind, string n) {
 							param pp = param();
 							pp.type = o[p];
 							pp.name = o[p];			// name
+							pp.id = makemeahash(pp.name,b);
 							pp.value = o[(p+1)];		// value - volatile
-							pp.owner = ee.id;
 							ee.params += pp;
 						} else { break; }
 						p += 1;
@@ -2335,9 +2343,11 @@ public class ParamRow : Gtk.Box {
 	private Gtk.EventControllerFocus paramvalevc;
 	private bool edited;
 	public uint elementid;
+	public uint paramid;
 	public ParamRow (int e, int idx) {
 		print("PARAMROW: started (%d, %d)\n",e,idx);
 		elementid = elements[e].id;
+		paramid = elements[e].params[idx].id;
 		edited = false;
 		if (idx < elements[e].params.length) {
 			paramvar = new Gtk.Entry();
@@ -2357,10 +2367,11 @@ public class ParamRow : Gtk.Box {
 				paramvar.changed.connect(() => {
 					if (doup) {
 						int ee = getelementindexbyid(elementid);
+						int pp = getparamindexbyid(ee,paramid);
 						if (ee >= 0) {
 							if (paramvar.text.strip() != "") {
 								doup = false;
-								elements[e].params[idx].name = paramvar.text.strip();
+								elements[ee].params[pp].name = paramvar.text.strip();
 								doup = true;
 							}
 						}
@@ -2369,10 +2380,11 @@ public class ParamRow : Gtk.Box {
 				paramval.changed.connect(() => {
 					if (doup) {
 						int ee = getelementindexbyid(elementid);
+						int pp = getparamindexbyid(ee,paramid);
 						if (ee >= 0) {
 							if (paramval.text.strip() != "") {
 								doup = false;
-								elements[ee].params[idx].value = paramval.text.strip();
+								elements[ee].params[pp].value = paramval.text.strip();
 								doup = true;
 							}
 						}
@@ -2421,9 +2433,10 @@ public class ParamRow : Gtk.Box {
 				paramvaltext.buffer.changed.connect(() => {
 					if (doup) {
 						int ee = getelementindexbyid(elementid);
+						int pp = getparamindexbyid(ee,paramid);
 						if (ee >= 0) {
 							if (elements[ee].params.length > idx) {
-								elements[ee].params[idx].value = paramvaltext.buffer.text;
+								elements[ee].params[pp].value = paramvaltext.buffer.text;
 								edited = true;
 							}
 						}
@@ -2445,38 +2458,39 @@ public class ParamRow : Gtk.Box {
 					parameval.get_style_context().add_class("xx");
 					parameval.clicked.connect(() => {
 						int ee = getelementindexbyid(elementid);
-						if (ee >= 0) {
+						int pp = getparamindexbyid(ee,paramid);
+						if (ee >= 0 && pp >= 0) {
+							if (spew) { print("PARAMROW:\tchecking inputs for %s...\n",elements[ee].name); }
 							doup = false;
 							int[] deps = {};
 							for (int i = 0; i < elements[ee].inputs.length; i++) {
 								deps += elements[ee].inputs[i].index;
 							}
-							if (deps.length > 0) {
-								if (spew) { print("PARAMROW:\tsending inputs to evalpath()...\n"); }
-								int[] q = evalpath(deps,elements[ee].index);
-								string ctyp = ""; 
-								string cmd = "";
-								//string[,] flg = {};
-								for (int p = 0; p < elements[ee].params.length; p++) {
-									if (elements[ee].params[p].name == "language") {
-										ctyp = elements[ee].params[p].value;
-									}
+							if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
+							int[] q = {};
+							if (deps.length > 0) { q = evalpath(deps,elements[ee].index); }
+							if (q.length == 0) { q += elements[ee].index; }
+							string ctyp = ""; 
+							string cmd = "";
+							for (int p = 0; p < elements[ee].params.length; p++) {
+								if (elements[ee].params[p].name == "language") {
+									ctyp = elements[ee].params[p].value; break;
 								}
-								switch (ctyp) {
-									case "vala"		: cmd = "valac"; break;
-									case "python"		: cmd = "python"; break;
-									case "shell"		: cmd = "sh"; break;
-									case "rebol3"		: cmd = "r3"; break;
-									default			: break;
-								}
-								for (int p = 0; p < elements[ee].params.length; p++) {
-									if (elements[ee].params[p].type == "flags") {
-										cmd = cmd.concat(elements[ee].params[p].name, " ", elements[ee].params[p].value, " ");
-									}
-								}
-								print("cmd = %s\n",cmd);
-								//string paramresult = evalsrcparam(hidx,e,idx,paramvaltext.buffer.text,cmd);
 							}
+							switch (ctyp) {
+								case "vala"		: cmd = "valac"; break;
+								case "python"		: cmd = "python"; break;
+								case "shell"		: cmd = "sh"; break;
+								case "rebol3"		: cmd = "r3"; break;
+								default			: cmd = "text"; break;
+							}
+							for (int p = 0; p < elements[ee].params.length; p++) {
+								if (elements[ee].params[p].type == "flags") {
+									cmd = cmd.concat(elements[ee].params[p].name, " ", elements[ee].params[p].value, " ");
+								}
+							}
+							print("cmd = %s\n",cmd);
+							//string paramresult = evalsrcparam(hidx,e,idx,paramvaltext.buffer.text,cmd);
 							doup = true;
 						}
 					});
