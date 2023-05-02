@@ -1,7 +1,6 @@
 # frownedupon
 branching script Q  
-successor to Gifded,  
-taking org compatibility seriously this time
+branching successor to gifded.
 
 do not use this program  
 its here for my own personal use only
@@ -11,5 +10,5 @@ strewn across the yard atm
 
 # screenie
 *work in progress*  
-![screenie](230417_frownedupon_paragraph_params.png)  
+![screenie](230502_frownedupon_outliner.png)  
 paragraph elements, with eval preview of val:var links
