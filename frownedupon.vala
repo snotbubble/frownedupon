@@ -130,6 +130,10 @@ Gtk.CssProvider	lblcsp;	// label css provider
 string				lblcss;	// label css string
 Gtk.CssProvider	popcsp;	// popmenu css provider
 string				popcss;	// popmenu css string
+Gtk.CssProvider	gutcsp;	// gutter css provider
+string				gutcss;	// gutter css string
+Gtk.CssProvider	srccsp;	// src bg css provider
+string				srccss;	// src bg css string
 
 
 // default theme colors
@@ -2064,6 +2068,7 @@ public class OutputRow : Gtk.Box {
 	private Gtk.ToggleButton outputvalmaxi;
 	private Gtk.DragSource oututrowdragsource;
 	private Gtk.EventControllerFocus outputvalevc;
+	private GtkSource.Gutter outputvaltextgutter;
 	private bool edited;
 	public uint elementid;
 	public uint outputid;
@@ -2198,7 +2203,10 @@ public class OutputRow : Gtk.Box {
 				outputvaltext.bottom_margin = 0;
 				outputvaltext.space_drawer.enable_matrix = true;
 				outputvaltextbuff.set_highlight_syntax(true);
-				outputvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("Adwaita-gifded"));
+				outputvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("frownedupon"));
+				outputvaltextgutter = outputvaltext.get_gutter(LEFT);
+				outputvaltextgutter.get_style_context().add_provider(gutcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				outputvaltextgutter.get_style_context().add_class("xx");
 
 // edit
 				outputvaltext.buffer.changed.connect(() => {
@@ -2335,6 +2343,10 @@ public class OutputRow : Gtk.Box {
 			oupcsp = new Gtk.CssProvider();
 			oupcss = ".xx { background: #00000000; }";
 			oupcsp.load_from_data(oupcss.data);
+			outputvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			outputvalscroll.get_style_context().add_class("xx");
+			outputcontainer.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			outputcontainer.get_style_context().add_class("xx");
 			this.get_style_context().add_provider(oupcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			this.get_style_context().add_class("xx");
 			this.margin_top = 0;
@@ -2364,9 +2376,11 @@ public class ParamRow : Gtk.Box {
 	private Gtk.ToggleButton paramvalmaxi;
 	private Gtk.DragSource oututrowdragsource;
 	private Gtk.EventControllerFocus paramvalevc;
+	private GtkSource.Gutter paramvaltextgutter;
 	private bool edited;
 	public uint elementid;
 	public uint paramid;
+	public string language;
 	public ParamRow (int e, int idx) {
 		print("PARAMROW: started (%d, %d)\n",e,idx);
 		elementid = elements[e].id;
@@ -2441,7 +2455,7 @@ public class ParamRow : Gtk.Box {
 				paramvaltext.set_monospace(true);
 				paramvaltext.tab_width = 2;
 				paramvaltext.indent_on_tab = true;
-				paramvaltext.indent_width = 4;
+				paramvaltext.indent_width = 2;
 				paramvaltext.show_line_numbers = true;
 				paramvaltext.highlight_current_line = true;
 				paramvaltext.vexpand = true;
@@ -2452,7 +2466,19 @@ public class ParamRow : Gtk.Box {
 				paramvaltext.bottom_margin = 0;
 				paramvaltext.space_drawer.enable_matrix = true;
 				paramvaltextbuff.set_highlight_syntax(true);
-				paramvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("Adwaita-gifded"));
+				paramvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("frownedupon"));
+				for (int p = 0; p < elements[e].params.length; p++) {
+					if (spew) { print("PARAMROW: looking for language param: %s\n",elements[e].params[p].name); }
+					if (elements[e].params[p].name == "language") {
+						language = elements[e].params[p].value;
+						if (spew) { print("PARAMROW: param src language is %s\n",language); }
+						paramvaltextbuff.set_language(GtkSource.LanguageManager.get_default().get_language(language));
+						break;
+					}
+				}
+				paramvaltextgutter = paramvaltext.get_gutter(LEFT);
+				paramvaltextgutter.get_style_context().add_provider(gutcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paramvaltextgutter.get_style_context().add_class("xx");
 
 // edit
 				paramvaltext.buffer.changed.connect(() => {
@@ -2524,6 +2550,8 @@ public class ParamRow : Gtk.Box {
 				paramsubrow.margin_bottom = 0;
 				paramsubrow.append(paramvalmaxi);
 				paramvalscroll.set_child(paramvaltext);
+				paramvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paramvalscroll.get_style_context().add_class("xx");
 				paramvaltext.vexpand = true;
 				paramcontainer.append(paramsubrow);
 				paramcontainer.append(paramvalscroll);
@@ -2560,11 +2588,11 @@ public class ParamRow : Gtk.Box {
 			if (elements[e].type != "paragraph" && elements[e].type != "table") {
 				print("add param overrides here\n");
 			}
-			prmcsp = new Gtk.CssProvider();
-			prmcss = ".xx { background: #00000000; }";
-			prmcsp.load_from_data(prmcss.data);
-			this.get_style_context().add_provider(prmcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
-			this.get_style_context().add_class("xx");
+			//prmcsp = new Gtk.CssProvider();
+			//prmcss = ".xx { background: #00000000; }";
+			//prmcsp.load_from_data(prmcss.data);
+			//this.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			//this.get_style_context().add_class("xx");
 			this.margin_top = 0;
 			this.margin_start = 0;
 			this.margin_end = 0;
@@ -3390,7 +3418,7 @@ public class ParamBox : Gtk.Box {
 			pscroll.set_child(pbox);
 			this.append(pscroll);
 		} else { print("PARAMBOX: nothing to do here...\n"); }
-		print("PARAMBOX: create ended.\n");
+		print("PARAMBOX: create ended.\n\n");
 	}
 }
 
@@ -3576,9 +3604,17 @@ public class frownwin : Gtk.ApplicationWindow {
 		entcss = ".xx { border-radius: 0; border-top: 1px solid %s; border-left: 1px solid %s; border-right: 1px solid %s; border-bottom: 1px solid %s; background: %s; color: %s; }".printf(sblit,sblit,sbshd,sbshd,sbmrk,sbsel);
 		entcsp.load_from_data(entcss.data);
 
+		gutcsp = new Gtk.CssProvider();
+		gutcss = ".xx { border-radius: 0; background: %s; }".printf(sbbkg);
+		gutcsp.load_from_data(gutcss.data);
+
 		lblcsp = new Gtk.CssProvider();
 		lblcss = ".xx { color: %s; }".printf(sbsel);
 		lblcsp.load_from_data(lblcss.data);
+
+		srccsp = new Gtk.CssProvider();
+		srccss = ".xx { background: %s; }".printf(sbbkg);
+		srccsp.load_from_data(srccss.data);
 
 // interaction states
 
