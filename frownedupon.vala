@@ -169,9 +169,12 @@ void elementownsio (int e) {
 	}
 }
 
-int getmysourceindexbyname (string n) {
+int getmysourceindexbyname (int ind, string n) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("%sGETMYSOURCEINDEXBYNAME: started (string %s)\n",tabs,n); }
 	for (int o = 0; o < outputs.length; o++) {
-		if (outputs[o].name == n) { return o; }
+		if (spew) { print("%s\tGETMYSOURCEINDEXBYNAME: %s == %s ?\n",tabs,outputs[o].name,n); }
+		if (strcmp(outputs[o].name, n) == 0) { return o; }
 	}
 	return -1;
 }
@@ -330,42 +333,47 @@ int getheadingindexbyid (uint n) {
 	return -1;
 }
 
-int getmysourceindexbypropname(string n, int g, int y) {
-	if (spew) { print("\t\tgetmysourceindexbypropname started...\n"); }
+int getmysourceindexbypropname(int ind, string n, int g, int y) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("%sgetmysourceindexbypropname started...\n",tabs); }
 	for (int h = g; h >= 0; h--) {
-		if (spew) { print("\t\t\tgetmysourceindexbypropname checking heading[%d] %s...\n",h,headings[h].name); }
+		if (spew) { print("%s\tgetmysourceindexbypropname checking heading[%d] %s...\n",tabs,h,headings[h].name); }
 		if (headings[h].stars <= y) {
 			for (int e = 0; e < headings[h].ebuff.length; e++) {
-				if (spew) { print("\t\t\t\tgetmysourceindexbypropname checking heading[%d].elements[%d] %s...\n",h,e,headings[h].elements[e].name); }
+				if (spew) { print("%s\t\tgetmysourceindexbypropname checking heading[%d].elements[%d] %s...\n",tabs,h,e,headings[h].elements[e].name); }
 				for (int o = 0; o < headings[h].elements[e].obuff.length; o++) {
 					int oo = getoutputindexbyid(headings[h].elements[e].obuff[o]);
-					if (spew) { print("\t\t\t\t\tgetmysourceindexbypropname checking outputs[%d] %s...\n",oo,outputs[oo].name); }
+					if (spew) { print("%s\t\t\tgetmysourceindexbypropname checking outputs[%d] %s...\n",tabs,oo,outputs[oo].name); }
 					if (outputs[oo].name == n) { 
-						if (spew) { print("\t\tgetmysourceindexbypropname returned %d\n",outputs[oo].index); }
+						if (spew) { print("%s\t\t\t\tgetmysourceindexbypropname returned %d\n",tabs,outputs[oo].index); }
 						return outputs[oo].index; 
 					}
 				}
 			}
 		} else { break; }
 	}
-	if (spew) { print("\t\tgetmysourceindexbypropname found nothing.\n"); }
+	if (spew) { print("%sgetmysourceindexbypropname found nothing.\n",tabs); }
 	return -1;
 }
 
-int getmysourcebyvalvar(string n, int g, int y) {
-	print("GETMYSOURCEBYVALVAR started (string %s, int %d, int %d)",n,g,y);
+int getmysourcebyvalvar(int ind, string n, int g, int y) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("%sGETMYSOURCEBYVALVAR: started (string %s, int %d, int %d)\n",tabs,n,g,y);
 	for (int h = g; h >= 0; h--) {
 		if (headings[h].stars <= y) {
 			for (int e = 0; e < headings[h].elements.length; e++) {
 				for (int o = 0; o < headings[h].elements[e].outputs.length; o++) {
 					if (headings[h].elements[e].outputs[o].name == n) { 
+						print("%sGETMYSOURCEBYVALVAR: returned %d.\n",tabs,headings[h].elements[e].outputs[o].index);
 						return headings[h].elements[e].outputs[o].index; 
 					}
 				}
 			}
 		} else { break; }
 	}
-	return getmysourceindexbyname(n);
+	int oo = getmysourceindexbyname((ind + 4),n);
+	print("%sGETMYSOURCEBYVALVAR: returned %d.\n",tabs,oo);
+	return oo;
 }
 
 // initial linking using orgmode rules:
@@ -408,43 +416,51 @@ void buildpath () {
 	}
 }
 
-void crosslinkio () {
-	int myo = 0;
+void crosslinkio (int ind) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("%sCROSSLINKIO: crosslinkio started...\n",tabs);
+	int myo = -1;
 	int e = -1;
 	int o = -1;
 	int i = -1;
 	for (int h = 0; h < headings.length; h++) {
+		print("%s\tCROSSLINKIO: checking %s elements...\n",tabs,headings[h].name);
 		for (int b = 0; b < headings[h].ebuff.length; b++) {
 			e = getelementindexbyid(headings[h].ebuff[b]);
 			if (e >= 0) {
+				print("%s\t\tCROSSLINKIO: checking %s inputs...\n",tabs,elements[e].name);
 				for (int c = 0; c < elements[e].ibuff.length; c ++) {
+					myo = -1;
 					i = getinputindexbyid(elements[e].ibuff[c]);
 					if (i >= 0) {
 						if (inputs[i].name != null && inputs[i].name != "") {
 							if (inputs[i].org != null && inputs[i].org != "") {
+								print("%s\t\t\tCROSSLINKIO: checking %s org: %s\n",tabs,inputs[i].name, inputs[i].org);
 								if (inputs[i].org.contains("org-entry-get")) {
 // local search for propbin
+									print("%s\t\t\t\tCROSSLINKIO: checking org-entry-get link\n",tabs);
 									int sq = inputs[i].org.index_of("\"") + 1;
 									int eq = inputs[i].org.last_index_of("\"");
 									if (eq > sq) {
-										myo = getmysourceindexbypropname(inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+										myo = getmysourceindexbypropname((ind + 16), inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
 									}
-								}
-								if (inputs[i].org != null && inputs[i].org.contains("[[val:")) {
-
+								} else {
+									if (inputs[i].org != null && inputs[i].org.contains("[[val:")) {
+										print("%s\t\t\t\tCROSSLINKIO: checking val:var link\n",tabs);
 // local search for name or propbin. failing that: global name search
-									int sq = inputs[i].org.index_of(":") + 1;
-									int eq = inputs[i].org.last_index_of("]]");
-									myo = getmysourcebyvalvar(inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
-								}
-							} else {
+										int sq = inputs[i].org.index_of(":") + 1;
+										int eq = inputs[i].org.last_index_of("]]");
+										myo = getmysourcebyvalvar((ind + 16), inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
+									} else {
 
 // global search for matching nametag name for inputs extracted from scrblock :var strings
-								myo = getmysourceindexbyname(inputs[i].name);
+										myo = getmysourceindexbyname((ind + 12), inputs[i].value.strip());
+									}
+								}
 							}
-							print("CROSSLINKIO: myo = %d\n",myo);
+							print("%s\t\t\tCROSSLINKIO: myo = %d\n",tabs,myo);
 							if (myo >= 0) { 
-								print("CROSSLINKIO: %s source is %s\n",inputs[i].name,outputs[myo].name);
+								print("%s\t\t\t\tCROSSLINKIO: %s source is %s\n",tabs,inputs[i].name,outputs[myo].name);
 								inputs[i].source = &outputs[myo];
 							}
 						}
@@ -465,52 +481,6 @@ void crosslinkio () {
 		}
 	}
 }
-
-void oldcrosslinkeverything () {
-	uint myo = 0;
-	for (int h = 0; h < headings.length; h++) {
-		for (int e = 0; e < headings[h].elements.length; e++) {
-			for (int i = 0; i < headings[h].elements[e].inputs.length; i++) {
-				myo = 0;
-				if (headings[h].elements[e].inputs[i].name != null) { 
-					if (headings[h].elements[e].inputs[i].name != "") { 
-						if (headings[h].elements[e].inputs[i].org != null && headings[h].elements[e].inputs[i].org != "") {
-							if (spew) { print("\tcrosscheck: checking input %s org: %s\n",headings[h].elements[e].inputs[i].name, headings[h].elements[e].inputs[i].org); }
-							if (headings[h].elements[e].inputs[i].org.contains("org-entry-get")) {
-
-// local search for propbin
-								int sq = headings[h].elements[e].inputs[i].org.index_of("\"") + 1;
-								int eq = headings[h].elements[e].inputs[i].org.last_index_of("\"");
-								if (eq > sq) {
-									myo = getmysourceindexbypropname(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
-								}
-							}
-							if (headings[h].elements[e].inputs[i].org.contains("[[val:")) {
-
-// local search for name or propbin. failing that: global name search
-								int sq = headings[h].elements[e].inputs[i].org.index_of(":") + 1;
-								int eq = headings[h].elements[e].inputs[i].org.last_index_of("]]");
-								myo = getmysourcebyvalvar(headings[h].elements[e].inputs[i].org.substring(sq,(eq-sq)),h,headings[h].stars);
-							}
-						} else {
-							myo = headings[h].elements[e].inputs[i].source.index;
-						}
-						if (myo != 0) { headings[h].elements[e].inputs[i].source = &outputs[myo]; }
-					}
-				}
-			}
-		}
-	}
-	for (int i = 0; i < inputs.length; i++) {
-		if (inputs[i].source != null) {
-			inputs[i].source.targets += &inputs[i];
-			inputs[i].source.ibuff += inputs[i].id;
-			inputs[i].obuff = inputs[i].source.id;
-		}
-	}
-}
-
-
 
 int findtodoindexbyname (string n, todo[] h) {
 	for (int q = 0; q < h.length; q++) {
@@ -799,9 +769,11 @@ string renameuniqueoutputname(string n, uint u, string y) {
 	return k;
 }
 
-bool updatevalvarlinks(string t, int h, int e) {
+bool updatevalvarlinks(int ind, string t, int h, int e) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	if (spew) { print("%supdatevalvarlinks started...\n",tabs); }
 	bool oo = false;
-	if (spew) { print("updatevalvarlinks: string =\n%s\n",t); }
+	if (spew) { print("%\tsupdatevalvarlinks: string =\n%s\n",tabs,t); }
 	deletemyinputs(elements[e].ibuff);
 	if (t.contains("[[val:") && t.contains("]]")) {
 		string chmpme = t;
@@ -809,23 +781,23 @@ bool updatevalvarlinks(string t, int h, int e) {
 		while (chmpme.contains("[[val:") && chmpme.contains("]]")) {
 			int iidx = chmpme.index_of("[[val:");
 			int oidx = chmpme.index_of("]]") + 2;
-			if (spew) { print("updatevalvarlinks: link start index is %d, end offset is %d\n",iidx,(oidx - iidx)); }
+			if (spew) { print("%s\t\tupdatevalvarlinks: link start index is %d, end offset is %d\n",tabs,iidx,(oidx - iidx)); }
 			if (oidx > iidx) { 
 				string chmp = chmpme.substring(iidx,(oidx - iidx));
-				if (spew) { print("updatevalvarlinks: extracted link is %s\n",chmp); }
+				if (spew) { print("%s\t\t\tupdatevalvarlinks: extracted link is %s\n",tabs,chmp); }
 				if (chmp != null && chmp != "") {
 					string ct = chmp.replace("]]","");
 					string[] cn = ct.split(":");
 					if (cn.length == 2) {
-						if (spew) { print("updatevalvarlinks: checking for %s in inputs\n",cn[1]); }
+						if (spew) { print("%s\t\t\t\tupdatevalvarlinks: checking for %s in inputs\n",tabs,cn[1]); }
 						input qq = input();
 						qq.org = chmp;
 						qq.defaultv = chmp;
-						qq.name = cn[1];
+						qq.name = cn[1].strip();
 						qq.id = makemeahash(qq.name,(elements[e].inputs.length + 1));
 						inputs += qq;
 						elements[e].inputs += &inputs[(inputs.length - 1)];
-						inputs[(inputs.length - 1)].source = &outputs[(getmysourceindexbyname(cn[1]))];
+						inputs[(inputs.length - 1)].source = &outputs[(getmysourceindexbyname((ind + 16),cn[1].strip()))];
 						inputs[(inputs.length - 1)].obuff = inputs[(inputs.length - 1)].source.id;
 						inputs[(inputs.length - 1)].owner = &elements[e];
 						inputs[(inputs.length - 1)].ebuff = elements[e].id;
@@ -839,23 +811,31 @@ bool updatevalvarlinks(string t, int h, int e) {
 			}
 			safeteycheck += 1;
 		}
-	} else { return false; }
+	} else { if (spew) { print("%supdatevalvarlinks returned nothing.\n",tabs); } return false; }
+	if (spew) { print("%supdatevalvarlinks returned true.\n",tabs); }
 	return oo;
 }
 
 int[] evalpath (int[] nn, int me) {
+	print("EVALPATH: me = %s, nn.length = %d\n",elements[me].name, nn.length);
+	for (int i = 0; i < nn.length; i++) {
+		print("nn[%d] = %s\n",i,inputs[nn[i]].name);
+	}
 	int r = 0;
 	int[] ss = nn;
 	int[] ee = {};
-	ee += me;
+	//ee += me;
+	print("\tEVALPATH: %s.%s.index: %d = %s\n",elements[me].name,inputs[nn[0]].name, inputs[nn[0]].index,inputs[nn[0]].name);
 	ee += inputs[ss[0]].owner.index;
 	while (r < ss.length) {
-		print("evalpath: finding sources of %s\n",inputs[r].name);
-		if (inputs[r].source != null) {
-			print("evalpath:\tfound source: %s\n",inputs[r].source.name);
-			ee += inputs[r].source.owner.index;
-			for(int i = 0; i < inputs[r].source.owner.inputs.length; i++) {
-				ss += inputs[r].source.owner.inputs[i].index;
+		print("evalpath: finding sources of %s\n",inputs[ss[r]].name);
+		if (inputs[ss[r]].source != null) {
+			print("evalpath:\tfound source: %s\n",inputs[ss[r]].source.name);
+			ee += inputs[ss[r]].source.owner.index;
+			print("evalpath:\tsource owner element is: %s\n",inputs[ss[r]].source.owner.name);
+			for(int i = 0; i < inputs[ss[r]].source.owner.inputs.length; i++) {
+				print("evalpath:\t\tsource owner element input[%d] is: %s\n",i,inputs[ss[r]].source.owner.inputs[i].name);
+				ss += inputs[ss[r]].source.owner.inputs[i].index;
 			}
 		}
 		r += 1;
@@ -864,7 +844,7 @@ int[] evalpath (int[] nn, int me) {
 	int[] te = {};
 	for (int j = (ee.length - 1); j > 0; j--) { 
 		if ((ee[j] in te) == false) { te += ee[j]; }
-		print("te[%d] = %s\n",(te.length - 1),elements[(te[(te.length - 1)])].name);
+		print("evalpath: elements[%d] = %s\n",(te.length - 1),elements[(te[(te.length - 1)])].name);
 	}
 	return te;
 }
@@ -1041,7 +1021,7 @@ int findparagraph (int l, int ind) {
 									//qq.source = null;
 									qq.org = chmp;
 									qq.defaultv = chmp;
-									chmpme = chmpme.replace(chmp,"");
+									chmpme = chmpme.replace(chmp,"").strip();
 									chmp = chmp.replace("]]","");
 									qq.name = chmp.split(":")[1];
 									qq.id = makemeahash(qq.name,c);
@@ -1241,7 +1221,7 @@ int findtable (int l, int ind, string n) {
 						if (themathvars.length > 0 && themathvars.length == themathorgvars.length) {
 							for(int x = 0; x < themathvars.length; x++) {
 								input ff = input();
-								ff.name = themathvars[x];
+								ff.name = themathvars[x].strip();
 								ff.id = makemeahash(ff.name,f);
 
 // org-sbe vals need to be obtained after an eval
@@ -1346,15 +1326,18 @@ int findsrcblock (int l,int ind, string n) {
 			if (hp[m].length > 3) {
 
 // turn vars into inputs, sources are checked in a post-process, as the source may not exist yet
-// check this with foreign language vars
 				if (hp[m].has_prefix("var ")) {
 					if (spew) { print("[%d]%s\t\tfound vars: %s\n",b,tabs,hp[m]); }
+//   :var x=huh y = 23
+// = ["x", "huh y ", " 23"]
+// = ["x", "huh", "y", "23"]
 					string[] v = hp[m].split("=");
 					v[0] = v[0].replace("var ","").strip();
-					string[] hvars = {v[0]};
+					string[] hvars = {};
 					for (int s = 0; s < v.length; s++) {
 						string st = v[s].strip();
 						if (st != "") {
+							if (spew) { print("[%d]%s\t\t\tchecking %s for enclosures...\n",b,tabs,st); }
 							string c = st.substring(0,1);
 							string d = "\"({[\'";
 							if (d.contains(c)) {
@@ -1370,21 +1353,31 @@ int findsrcblock (int l,int ind, string n) {
 									if (lidx > 0 && lidx <= st.length) {
 										vr = vr.substring(lidx).strip();
 									}
+									if (spew) { print("[%d]%s\t\t\t\tvl = %s, vr = %s\n",b,tabs,vl,vr); }
 									hvars += vl;
 									hvars += vr;
 								}
 							} else {
+								if (spew) { print("[%d]%s\t\t\t\tchecking [%s] for leading spaces...\n",b,tabs,st); }
 								int lidx = st.index_of(" ") + 1;
 								if (lidx > 0 && lidx <= st.length) {
 									string vl = st.substring(0,lidx);
 									string vr = st.substring(lidx).strip();
+									if (spew) { print("[%d]%s\t\t\t\tvl = %s, vr = %s\n",b,tabs,vl,vr); }
 									hvars += vl;
 									hvars += vr;
+								} else {
+									if (spew) { print("[%d]%s\t\t\t\tgapless var part = %s\n",b,tabs,st); }
+									hvars += st;
+									//for (int w = 0; w < hvars.length; w++) {
+									//	print("hvar[%d] = %s\n",w,hvars[w]);
+									//}
 								}
 							}
 						}
 					}
 					if ((hvars.length & 1) != 0) {
+						if (spew) { print("[%d]%s\t\thvars.length is not even: %d\n",b,tabs,hvars.length); }
 						hvars[(hvars.length - 1)] = null;
 					}
 					for (int p = 0; p < hvars.length; p++) {
@@ -1392,21 +1385,7 @@ int findsrcblock (int l,int ind, string n) {
 							if (spew) { print("[%d]%s\t\tvar pair: %s, %s\n",b,tabs,hvars[p],hvars[(p+1)]); }
 							input ip = input();
 							ip.org = "%s=%s".printf(hvars[p],hvars[(p+1)]);	// org syntax
-
-// removed to sacrifice speed for org-compatibility
-/*
-							if (hvars[(p+1)].contains("org-entry-get")) {
-								if (spew) { print("[%d]%s\t\tsyncing var name with org-entry-get...\n",b,tabs); }
-								int sq = hvars[(p+1)].index_of("\"") + 1;
-								int eq = hvars[(p+1)].last_index_of("\"");
-								if (sq < eq) {
-									if (spew) { print("[%d]%s\t\t\trenamed %s",b,tabs,hvars[p]); }
-									hvars[p] = hvars[(p+1)].substring(sq,(eq-sq));
-									if (spew) { print(" to %s\n",hvars[p]); }
-								}
-							}
-*/
-							ip.name = hvars[p];								// name
+							ip.name = hvars[p].strip();								// name
 							ip.id = makemeahash(ip.name, b);							// id, probably redundant
 							ip.value = hvars[(p+1)];							// value - volatile
 							ip.defaultv = hvars[(p+1)];						// fallback value
@@ -1414,6 +1393,7 @@ int findsrcblock (int l,int ind, string n) {
 							inputs += ip;
 							ee.inputs += &inputs[(inputs.length - 1)];
 							ee.ibuff += ip.id;
+							if (spew) { print("[%d]%s\t\t\tcaptured %s[%d] input name: %s, value: %s, org: %s\n",b,tabs,ee.name,elements.length,ip.name,ip.value,ip.org); }
 						} else { break; }
 						p += 1;
 					}
@@ -1477,6 +1457,7 @@ int findsrcblock (int l,int ind, string n) {
 		if (spew) { print("[%d]%ssearching for result...\n",b,tabs); }
 		string resblock = "";
 		bool amresult = false;
+		bool amxmpresult = false;
 		int c = (b + 1);
 		for (c = (b + 1); c < lines.length; c++) {
 			string cs = lines[c].strip();
@@ -1485,11 +1466,23 @@ int findsrcblock (int l,int ind, string n) {
 // skip newlines
 			if (cs != "") {
 				if (amresult) {
-					if (cs.has_prefix(": ")) { 
+					if (amxmpresult == false) {
+						if (cs.has_prefix(": ")) { 
+							if (spew) { print("[%d]%s\t\tcapturing colon result: %s\n",c,tabs,lines[c]); }
+							resblock = resblock.concat(lines[c],"\n");
+						} else { 
+							if (cs.has_prefix("#+begin_example")) { 
+								if (spew) { print("[%d]%s\t\t\tfound verbatim result...\n",c,tabs); }
+								amxmpresult = true; 
+								continue; 
+							}
+							if (spew) { print("[%d]%s\t\treached end of results...\n",c,tabs); }
+							break;
+						}
+					} else {
+						if (cs.has_prefix("#+end_example")) { amxmpresult = false; amresult = false; break; }
+						if (spew) { print("[%d]%s\t\t\tcapturing verbatim result: %s\n",c,tabs,lines[c]); }
 						resblock = resblock.concat(lines[c],"\n");
-					} else { 
-						if (spew) { print("[%d]%s\t\treached end of results...\n",c,tabs); }
-						break;
 					}
 				} else {
 					if (cs.has_prefix("#+NAME:")) {
@@ -1930,8 +1923,37 @@ int findpriorities (int l, int ind) {
 	return 0;
 }
 
-void loadmemyorg (string defile) {
-	print("loadmemyorg: loading %s\n",defile);
+void eval(int[] e) {
+	for (int q = 0; q < e.length; q++) {
+		string ctyp = ""; 
+		string cmd = "";
+		int srcp = 0;
+		for (int i = 0; i < elements[e[q]].params.length; i++) {
+			if (elements[e[q]].params[i].name == "language") {
+				ctyp = elements[e[q]].params[i].value;
+				srcp = i;
+			}
+			if (elements[e[q]].params[i].type == "flags") {
+				cmd = cmd.concat(elements[e[q]].params[p].name, " ", elements[e[q]].params[p].value, " ");
+			}
+		}
+		switch (ctyp) {
+			case "vala"		: cmd = "valac"; break;
+			case "python"		: cmd = "python"; break;
+			case "shell"		: cmd = "sh"; break;
+			case "sh"			: cmd = "sh"; break;
+			case "rebol3"		: cmd = "r3"; break;
+			case "rebol"		: cmd = "r3"; break;
+			default			: cmd = "text"; break;
+		}
+		cmd = "%s %s".printf(ctyp, cmd);
+		print("eval cmd = %s\n",cmd);
+	}
+}
+
+void loadmemyorg (int ind, string defile) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("%sloadmemyorg: loading %s\n",tabs,defile);
 // test file override
 	string ff = Path.build_filename ("./", defile);
 	File og = File.new_for_path(ff);
@@ -1941,12 +1963,12 @@ void loadmemyorg (string defile) {
 			uint8[] c; string e;
 			og.load_contents (null, out c, out e);
 			sorg = (string) c;
-			if (spew) { print("\ttestme.org loaded.\n"); }
+			if (spew) { print("%s\ttestme.org loaded.\n",tabs); }
 		} catch (Error e) {
 			print ("\tfailed to read %s: %s\n", og.get_path(), e.message);
 		}
 		if (sorg.strip() != "") {
-			print("loadmemyorg: clearing the arrays...\n");
+			print("%s\tloadmemyorg: clearing the arrays...\n",tabs);
 
 			headings = {};
 			elements = {};
@@ -1961,14 +1983,14 @@ void loadmemyorg (string defile) {
 			sel = -1;
 			hidx = -1;
 
-			print("loadmemyorg: headings.length   = %d\n",headings.length);
-			print("loadmemyorg: elements.length   = %d\n",elements.length);
+			print("%s\t\tloadmemyorg: headings.length   = %d\n",tabs,headings.length);
+			print("%s\t\tloadmemyorg: elements.length   = %d\n",tabs,elements.length);
 			//print("loadmemyorg: params.length     = %d\n",params.length);
-			print("loadmemyorg: inputs.length     = %d\n",inputs.length);
-			print("loadmemyorg: outputs.length    = %d\n",outputs.length);
-			print("loadmemyorg: tags.length       = %d\n",tags.length);
-			print("loadmemyorg: priorities.length = %d\n",priorities.length);
-			print("loadmemyorg: todos.length      = %d\n",todos.length);
+			print("%s\t\tloadmemyorg: inputs.length     = %d\n",tabs,inputs.length);
+			print("%s\t\tloadmemyorg: outputs.length    = %d\n",tabs,outputs.length);
+			print("%s\t\tloadmemyorg: tags.length       = %d\n",tabs,tags.length);
+			print("%s\t\tloadmemyorg: priorities.length = %d\n",tabs,priorities.length);
+			print("%s\t\tloadmemyorg: todos.length      = %d\n",tabs,todos.length);
 // type counts, used to name un-named elements on creation, not used for renaming
 // this will change in future, so replace it with something more descriptive
 // typecount[0] = paragraph element count
@@ -1982,9 +2004,9 @@ void loadmemyorg (string defile) {
 			headingname = "";
 			string srcname = "";
 			string ls = "";
-			print("\nreading lines...\n");
+			print("%s\treading lines...\n",tabs);
 			lines = sorg.split("\n");
-			print("loadmemyorg: %d lines read OK.\n",lines.length);
+			print("%s\tloadmemyorg: %d lines read OK.\n",tabs,lines.length);
 			int todoline = 0;
 			int priorityline = 0;
 			int i = 0;
@@ -1995,22 +2017,22 @@ void loadmemyorg (string defile) {
 			while (i < lines.length) {
 				if (todoline == 0 && i < 100 && headings.length < 3) { todoline = findtodos(i,1); }
 				if (priorityline == 0 && i < 100 && headings.length < 3) { priorityline = findpriorities(i,1); }
-				if (spew) { print("[%d] = %s\n",i,lines[i]); }
+				if (spew) { print("%s\t\t[%d] = %s\n",tabs,i,lines[i]); }
 				i = searchfortreasure(i,1);
 			}
-			if(spew) { print("testparse harvested:\n\t%d headings\n\t%d nametags\n\t%dproperty drawers\n\t%d src blocks\n\n",headings.length,typecount[5],typecount[1],typecount[2]); }
+			if(spew) { print("%s\ttestparse harvested:\n%s\t%d headings\n%s\t%d nametags\n%s\t%dproperty drawers\n%s\t%d src blocks\n",tabs,tabs,headings.length,tabs,typecount[5],tabs,typecount[1],tabs,typecount[2]); }
 			if (headings.length > 0) { 
 				hidx = 0;
 				indexheadings();
 				indexelements();
 				indexinputs();
 				indexoutputs();
-				if (spew) { print("loadmemyorg crosslink starting....\n"); }
+				if (spew) { print("%s\tloadmemyorg crosslink starting....\n",tabs); }
 				int64 cxts = GLib.get_real_time();
 				buildpath();
-				crosslinkio();
+				crosslinkio(ind + 4);
 				int64 cxte = GLib.get_real_time();
-				if (spew) { print("\ncrosslink took %f microseconds\n\n",((double) (cxte - cxts)));}
+				if (spew) { print("\n%scrosslink took %f microseconds\n\n",tabs,((double) (cxte - cxts)));}
 				sel = headings[0].id;
 			} else { print("Error: orgfile has no headings.\n"); }
 		} else { print("Error: orgfile was empty.\n"); }
@@ -2226,7 +2248,7 @@ public class OutputRow : Gtk.Box {
 						if (doup && edited) {
 							int oo = getoutputindexbyid(outputid);
 							int ee = getelementindexbyid(elementid);
-							bool vvl = updatevalvarlinks(outputvaltext.buffer.text,hidx,ee);
+							bool vvl = updatevalvarlinks(4,outputvaltext.buffer.text,hidx,ee);
 							if (vvl) {
 								doup = false;
 
@@ -2472,6 +2494,7 @@ public class ParamRow : Gtk.Box {
 					if (elements[e].params[p].name == "language") {
 						language = elements[e].params[p].value;
 						if (spew) { print("PARAMROW: param src language is %s\n",language); }
+						if (language == "rebol3") { language = "rebol"; }
 						paramvaltextbuff.set_language(GtkSource.LanguageManager.get_default().get_language(language));
 						break;
 					}
@@ -2515,30 +2538,16 @@ public class ParamRow : Gtk.Box {
 							doup = false;
 							int[] deps = {};
 							for (int i = 0; i < elements[ee].inputs.length; i++) {
-								deps += elements[ee].inputs[i].index;
+								if (elements[ee].inputs[i] != null) {
+									print("PARAMROW:\t\tcollecting dependency: %s.%s.index: %d = %s\n",elements[ee].name,elements[ee].inputs[i].name, elements[ee].inputs[i].index, inputs[(elements[ee].inputs[i].index)].name);
+									deps += elements[ee].inputs[i].index;
+								}
 							}
 							if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
 							int[] q = {};
-							if (deps.length > 0) { q = evalpath(deps,elements[ee].index); }
+							if (deps.length > 0) { q = evalpath(deps,ee); }
 							if (q.length == 0) { q += elements[ee].index; }
-							string ctyp = ""; 
-							string cmd = "";
-							if (elements[ee].params[pp].name == "language") {
-								ctyp = elements[ee].params[pp].value;
-							}
-							switch (ctyp) {
-								case "vala"		: cmd = "valac"; break;
-								case "python"		: cmd = "python"; break;
-								case "shell"		: cmd = "sh"; break;
-								case "rebol3"		: cmd = "r3"; break;
-								default			: cmd = "text"; break;
-							}
-							for (int p = 0; p < elements[ee].params.length; p++) {
-								if (elements[ee].params[p].type == "flags") {
-									cmd = cmd.concat(elements[ee].params[p].name, " ", elements[ee].params[p].value, " ");
-								}
-							}
-							print("cmd = %s\n",cmd);
+							eval(q);
 							doup = true;
 						}
 					});
@@ -2644,10 +2653,12 @@ public class InputRow : Gtk.Box {
 				print("inputshowval: inputs[%d] is %s\n",ii,inputs[ii].name);
 				if (ii >= 0) {
 					if (inputshowval.active) {
-						string inval = inputs[ii].source.value;
-						inputdefvar.set_text("(%s)".printf(inval));
-						inputshowval.icon_name = "user-available";
-						invcss = ".xx { background: #FF000020; }"; invcsp.load_from_data(invcss.data);
+						if (inputs[ii].source != null) {
+							string inval = inputs[ii].source.value;
+							inputdefvar.set_text("(%s)".printf(inval));
+							inputshowval.icon_name = "user-available";
+							invcss = ".xx { background: #FF000020; }"; invcsp.load_from_data(invcss.data);
+						}
 					} else {
 						inputdefvar.set_text(inputs[ii].defaultv);
 						invcss = ".xx { background: #00FFFF20; }"; invcsp.load_from_data(invcss.data);
@@ -2829,7 +2840,8 @@ public class ElementBox : Gtk.Box {
 				elminputbox.get_style_context().add_class("xx");
 				print("ELEMENTBOX:\tfetching %d inputs...\n",elements[idx].inputs.length);
 				for (int i = 0; i < elements[idx].inputs.length; i++) {
-					InputRow elminputrow = new InputRow(idx,i);
+					
+					InputRow elminputrow = new InputRow(idx,elements[idx].inputs[i].index);
 					elminputlistbox.append(elminputrow);
 				}
 				elminputlistbox.hexpand = true;
@@ -3720,7 +3732,7 @@ public class frownwin : Gtk.ApplicationWindow {
 								muh.clicked.connect ((buh) => {
 									if (buh.label.strip() != "") {
 										print("LOAD:\t\tloading %s...\n",buh.label);
-										loadmemyorg(buh.label.strip());
+										loadmemyorg(0,buh.label.strip());
 										if (headings.length > 0) {
 											hidx = 0;
 											restartui(0);
