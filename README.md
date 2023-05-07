@@ -11,4 +11,3 @@ strewn across the yard atm
 # screenie
 *work in progress*  
 ![screenie](230505_frownedupon_screenie.png)  
-paragraph elements, with eval preview of val:var links
