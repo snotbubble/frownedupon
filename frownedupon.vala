@@ -171,9 +171,9 @@ void elementownsio (int e) {
 
 int getmysourceindexbyname (int ind, string n) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
-	if (spew) { print("%sGETMYSOURCEINDEXBYNAME: started (string %s)\n",tabs,n); }
+	if (spew && hard) { print("%sGETMYSOURCEINDEXBYNAME: started (string %s)\n",tabs,n); }
 	for (int o = 0; o < outputs.length; o++) {
-		if (spew) { print("%s\tGETMYSOURCEINDEXBYNAME: %s == %s ?\n",tabs,outputs[o].name,n); }
+		if (spew && hard) { print("%s\tGETMYSOURCEINDEXBYNAME: %s == %s ?\n",tabs,outputs[o].name,n); }
 		if (strcmp(outputs[o].name, n) == 0) { return o; }
 	}
 	return -1;
@@ -819,7 +819,7 @@ bool updatevalvarlinks(int ind, string t, int h, int e) {
 int[] evalpath (int[] nn, int me) {
 	print("EVALPATH: me = %s, nn.length = %d\n",elements[me].name, nn.length);
 	for (int i = 0; i < nn.length; i++) {
-		print("nn[%d] = %s\n",i,inputs[nn[i]].name);
+		print("\tEVALPATH: nn[%d] = %s\n",i,inputs[nn[i]].name);
 	}
 	int r = 0;
 	int[] ss = nn;
@@ -828,13 +828,13 @@ int[] evalpath (int[] nn, int me) {
 	print("\tEVALPATH: %s.%s.index: %d = %s\n",elements[me].name,inputs[nn[0]].name, inputs[nn[0]].index,inputs[nn[0]].name);
 	ee += inputs[ss[0]].owner.index;
 	while (r < ss.length) {
-		print("evalpath: finding sources of %s\n",inputs[ss[r]].name);
+		print("\tEVALPATH: finding sources of %s\n",inputs[ss[r]].name);
 		if (inputs[ss[r]].source != null) {
-			print("evalpath:\tfound source: %s\n",inputs[ss[r]].source.name);
+			print("\tEVALPATH:\tfound source: %s\n",inputs[ss[r]].source.name);
 			ee += inputs[ss[r]].source.owner.index;
-			print("evalpath:\tsource owner element is: %s\n",inputs[ss[r]].source.owner.name);
+			print("\tEVALPATH:\tsource owner element is: %s\n",inputs[ss[r]].source.owner.name);
 			for(int i = 0; i < inputs[ss[r]].source.owner.inputs.length; i++) {
-				print("evalpath:\t\tsource owner element input[%d] is: %s\n",i,inputs[ss[r]].source.owner.inputs[i].name);
+				print("\tEVALPATH:\t\tsource owner element input[%d] is: %s\n",i,inputs[ss[r]].source.owner.inputs[i].name);
 				ss += inputs[ss[r]].source.owner.inputs[i].index;
 			}
 		}
@@ -844,7 +844,7 @@ int[] evalpath (int[] nn, int me) {
 	int[] te = {};
 	for (int j = (ee.length - 1); j > 0; j--) { 
 		if ((ee[j] in te) == false) { te += ee[j]; }
-		print("evalpath: elements[%d] = %s\n",(te.length - 1),elements[(te[(te.length - 1)])].name);
+		print("EVALPATH: elements[%d] = %s\n",(te.length - 1),elements[(te[(te.length - 1)])].name);
 	}
 	return te;
 }
@@ -1731,31 +1731,35 @@ int findname(int l, int ind) {
 	if (spew) { print("[%d]%sfindname started...\n",l,tabs); }
 	string ls = lines[l].strip();
 	if (ls.has_prefix("#+NAME:")) {
-		string[] lsp = ls.split(" ");
-		if (lsp.length == 3) {
-			if (spew) { print("[%d]%s\tfound a #+NAME one-liner: var=%s, val=%s\n\n",l,tabs,lsp[1],lsp[2]); }
-			element ee = element();
-			ee.name = "namevar_%s".printf(lsp[1]);
-			ee.id = makemeahash(ee.name,l);
-			ee.type = "nametag";
-			output oo = output();
-			oo.name = makemeauniqueoutputname(lsp[1]);
-			oo.id = makemeahash(oo.name,l);;
-			oo.value = lsp[2];
-			oo.ebuff = ee.id;
-			outputs += oo;
-			ee.outputs += &outputs[(outputs.length - 1)];
-			ee.obuff += oo.id;
-			ee.owner = &headings[hidx];
-			ee.hbuff = headings[hidx].id;
-			elements += ee;
-			headings[hidx].elements += &elements[(elements.length - 1)];
-			headings[hidx].ebuff += ee.id;
-			elementownsio((elements.length - 1));
-			typecount[6] += 1;
-			if (spew) { print("[%d]%s\t\tfindname captured a namevar\n",l,tabs); }
-			if (spew) { print("[%d]%sfindname ended.\n",(l + 1),tabs); }
-			return (l + 1); 
+		string[] lsp = ls.split("=");
+		if (lsp.length == 2) {
+			if (spew) { print("[%d]%s\tfound a #+NAME one-liner: var=%s, val=%s\n\n",l,tabs,lsp[0],lsp[1]); }
+			lsp[0] = lsp[0].replace("#+NAME:", "").strip();
+			lsp[1] = lsp[1].strip();
+			if (lsp[0] != "" && lsp[1] != "") {
+				element ee = element();
+				ee.name = "namevar_%s".printf(lsp[0]);
+				ee.id = makemeahash(ee.name,l);
+				ee.type = "nametag";
+				output oo = output();
+				oo.name = makemeauniqueoutputname(lsp[0]);
+				oo.id = makemeahash(oo.name,l);;
+				oo.value = lsp[1];
+				oo.ebuff = ee.id;
+				outputs += oo;
+				ee.outputs += &outputs[(outputs.length - 1)];
+				ee.obuff += oo.id;
+				ee.owner = &headings[hidx];
+				ee.hbuff = headings[hidx].id;
+				elements += ee;
+				headings[hidx].elements += &elements[(elements.length - 1)];
+				headings[hidx].ebuff += ee.id;
+				elementownsio((elements.length - 1));
+				typecount[6] += 1;
+				if (spew) { print("[%d]%s\t\tfindname captured a namevar\n",l,tabs); }
+				if (spew) { print("[%d]%sfindname ended.\n",(l + 1),tabs); }
+				return (l + 1);
+			}
 		}
 		if (lsp.length == 2) {
 			if (spew) { print("[%d]%s\tfound a capturing #+NAME: %s, looking for something to capture...\n",l,tabs,lsp[1]);}
@@ -1931,14 +1935,43 @@ int findpriorities (int l, int ind) {
 	return 0;
 }
 
-void eval(int ind, int[] e) {
+string writefiletopath (int ind, string p, string n, string e, string s) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("%sWRITE: started...\n",tabs);
+	if (s.strip() != "" && n.strip() != "" && e.strip() != "") {
+		bool allgood = true;
+		string pth = GLib.Environment.get_current_dir();
+		if (p.strip() != "") { pth = pth.concat("/", p, "/"); } else { pth = pth.concat("/"); }
+		GLib.Dir dcr = null;
+		print("%s\tWRITE: check dir: %s\n",tabs,pth);
+		try { dcr = Dir.open (pth, 0); } catch (Error e) { print("%s\t\tWRITE: checkdir failed: %s\n",tabs,e.message); allgood = false; }
+		File hfile = File.new_for_path(pth.concat(n,".",e));
+		File hdir = File.new_for_path(pth);
+		if (allgood == false) {
+			print("%s\t\t\tWRITE: make dir...\n",tabs);
+			try { 
+				hdir.make_directory_with_parents();
+				print("%s\t\t\t\tWRITE: made export dir: %s\n",tabs,pth);
+				allgood = true;
+			} catch (Error e) { print("%s\t\t\t\tWRITE: makedirs failed: %s\n",tabs,e.message); allgood = false; }
+		}
+		if (allgood) {
+			print("%s\tWRITE: writing...\n",tabs);
+			FileOutputStream hose = hfile.replace(null,false,FileCreateFlags.PRIVATE);
+			try {
+				hose.write(s.data);
+				print("%s\t\tWRITE: written.\n%s\t\t%s\n",tabs,hfile.get_path(),tabs);
+				print("%sWRITE: ended.\n",tabs);
+				return hfile.get_path();
+			} catch (Error e) { print("%s\t\tWRITE: failed: %s\n",tabs,e.message); }
+		} else { print("%s\t\tWRITE: couldn't make dir, aborting export.\n",tabs); }
+	} else { print("%s\tWRITE: empty input, aborting.\n",tabs); }
+	return "";
+}
+
+bool eval(int ind, int[] e) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	print("%sEVAL: started...\n",tabs);
-// for each element
-// 1. get elementname, srcblockname, resultname, language type, flags, src
-// 2. attempt to load (previous listed index)_elementname_resultname.txt (skip if first)
-//    previous results are not handed over internally, the shouyld be read via args in the source:
-//
 // string[] lines; 
 // void main(string[] args) { 
 //     var dd = GLib.Environment.get_current_dir();
@@ -1954,107 +1987,202 @@ void eval(int ind, int[] e) {
 //     if (lines.length > 0) {
 // ...
 //
-// or Rebol:
-// REBOL []
-// lines: copy []
-// if (length? system/script/args) > 1 [
-//     if (exists? to-file system/script/args) [ 
-//         lines: read/lines to-file system/script/args
-//     ]
-// ]
-// if (length? lines) > 0 [
-// ...
-//
-// or Python:
-// import sys
-// import path
-// lines = []
-// if len(sys.argv) > 1 : 
-//     if os.path.isfile(sys.argv[1]) :
-//         f = open(sys.argv[1], "r")
-//         lines = f.readlines()
-// if len(lines) > 0 :
-// ...
-//
-// 3. build its command string
-// 4. evaluate it
-// 5. send results to output
-// 6. save output to file as index_elementname_srcblockname_resultname.txt
+// for each element in e
+//     for each input in element
+//         does input have an output file?
+//             error and quit if not    
+//             make output file path and input name as an arg-par if true
+//      get my language
+//      get my flags
+//      get my code
+//      inject var = arg into code
+//      save code to file
+//      build command string
+//      run command string, save output to result textbuffer
+//      save result to output file
+// delete all temp files
+
+	string[] cleanup = {};
 	for (int q = 0; q < e.length; q++) {
 		print("%sEVAL: checking element %s\n",tabs, elements[e[q]].name);
 		string elementname = ""; 
 		string srcblockname = "";
 		string resultname = "";
 		string language = "";
-		string evalflags = "";
+		string[] evalflags = {};
 		string previousresult = "";
 		string[] arglist = {};
 		string[] argsrc = {};
 
 		int srcindex = -1;
-		string cmd = "";
+		string[] cmd = {};
 		string varc = "";
+		string ext = "";
 		int flagc = 0;
 
-// get results of upstream elements
+// get result tempfile paths of input sources, save to arg var:val pair
+		print("%sEVAL: looking upstream element results...\n",tabs);
 		if (q > 0) {
 			for (int i = 0; i < elements[e[q]].inputs.length; i++) {
 				if (elements[e[q]].inputs[i].source != null) {
-					previousresult = "%d_%s_%s.txt".printf(e[q-1],elements[e[q-1]].name,elements[e[q]].inputs[i].source.name);
+					previousresult = "%s.txt".printf(elements[e[q]].inputs[i].source.name);
 					string dd = GLib.Environment.get_current_dir();
-					GLib.File ff = File.new_for_path(dd.concat("/temp/",previousresult));
+					GLib.File ff = File.new_for_path(dd.concat("/",previousresult));
 					if (ff.query_exists()) {
 						arglist += ff.get_path(); argsrc += elements[e[q]].inputs[i].name;
-					} else { print("%s\tEVAL: no output file %s found for %s.%s\n",tabs, previousresult,elements[e[q-1]].name,elements[e[q]].inputs[i].source.name); }
-				} else { print("%s\tEVAL: %s.inputs[%d].source is null\n",tabs,elements[e[q]].name,i); }
+					} else { 
+						print("%s\tEVAL: no output file %s found for %s.%s\n",tabs, previousresult,elements[e[q-1]].name,elements[e[q]].inputs[i].source.name);
+						print("%sEVAL: aborted due to broken link between %s and %s\n\n",tabs,elements[e[q-1]].name,elements[e[q]].name);
+						return false;
+					}
+				} else { print("%s\tEVAL: %s.inputs[%d].source is null\n",tabs,elements[e[q]].name,i); return false; }
 			}
 		} else { print("%s\tEVAL: %s is first\n",tabs,elements[e[q]].name); }
 
+// get language, flags and source
 		for (int p = 0; p < elements[e[q]].params.length; p++) {
 			if (elements[e[q]].params[p].name == "language") {
 				language = elements[e[q]].params[p].value;
+				print("%s\tEVAL: language is %s\n",tabs,language);
 			}
 			if (elements[e[q]].params[p].type == "flags") {
-				evalflags = evalflags.concat(elements[e[q]].params[p].name, " ", elements[e[q]].params[p].value, " ");
+				evalflags += elements[e[q]].params[p].name;
+				evalflags += elements[e[q]].params[p].value;
 				flagc += 1;
 			}
 			if (elements[e[q]].params[p].type == "source") {
 				srcindex = p;
+				print("%s\tEVAL: source param index is %d\n",tabs,srcindex);
 			}
 		}
 
-		switch (language.down()) {
-			case "vala"		: language = "valac"; break;
-			case "python3"		: language = "python"; break;
-			case "python2"		: language = "python"; break;
-			case "python"		: language = "python"; break;
-			case "shell"		: language = "sh"; break;
-			case "sh"			: language = "sh"; break;
-			case "rebol3"		: language = "r3"; break;
-			case "rebol2"		: language = "r3"; break;
-			case "rebol"		: language = "r3"; break;
-			case "html"		: language = "html"; break;
-			case "htm"			: language = "html"; break;
-			case "xml"			: language = "xml"; break;
-			default			: language = "text"; break;
+// check for non srcblock elements, pass on their outputs
+		if (srcindex == -1 && elements[e[q]].outputs.length > 0) {
+			print("%s\tEVAL: looking for non-srcblock outputs...\n",tabs);
+			for (int o = 0; o < elements[e[q]].outputs.length; o++) {
+				if (elements[e[q]].outputs[o] != null) {
+					if (elements[e[q]].outputs[o].value != null) {
+						if (elements[e[q]].outputs[o].value.strip() != "") {
+							print("%s\t\tEVAL: found non-srcblock output: %s\n",tabs,elements[e[q]].outputs[o].name);
+							string w = writefiletopath((ind + 4),"",elements[e[q]].outputs[o].name,"txt",elements[e[q]].outputs[o].value);
+							 cleanup += w;
+							if (w.strip() != "") { print("%s\tEVAL: wrote output to disk.\n",tabs); }
+						}
+					}
+				}
+			}
 		}
 
-// prep source var = args
-		cmd = "%s %s".printf(language, evalflags);
-		varc = "";
-		if (language == "valac") {
-			for (int s = 0; s < arglist.length; s++) {
-				cmd = cmd.concat(" ", arglist[s]);
-				varc = "%s\nstring %s = args[%d];".printf(varc,argsrc[s],(s + flagc));
-				print("%s\t\t\tEVAL: injecting %s\n",tabs,varc);
+		if (srcindex >= 0) {
+
+// set language file extension
+			switch (language.down()) {
+				case "vala"		: ext = "vala"; break;
+				case "python3"		: ext = "py"; break;
+				case "python2"		: ext = "py"; break;
+				case "python"		: ext = "py"; break;
+				case "shell"		: ext = "sh"; break;
+				case "sh"			: ext = "sh"; break;
+				case "rebol3"		: ext = "r3"; break;
+				case "rebol2"		: ext = "r3"; break;
+				case "rebol"		: ext = "r3"; break;
+				case "html"		: ext = "html"; break;
+				case "htm"			: ext = "html"; break;
+				case "xml"			: ext = "xml"; break;
+				default			: ext = "txt"; break;
 			}
+
+// rename language description to language command
+			switch (language.down()) {
+				case "vala"		: language = "valac"; break;
+				case "python3"		: language = "python"; break;
+				case "python2"		: language = "python"; break;
+				case "python"		: language = "python"; break;
+				case "shell"		: language = "sh"; break;
+				case "sh"			: language = "sh"; break;
+				case "rebol3"		: language = "./r3"; break;
+				case "rebol2"		: language = "./r3"; break;
+				case "rebol"		: language = "./r3"; break;
+				case "html"		: language = "cat"; break;
+				case "htm"			: language = "cat"; break;
+				case "xml"			: language = "cat"; break;
+				default			: language = "cat"; break;
+			}
+
+// inject var = arg[n] at the appropriate location in source
+			flagc = evalflags.length;
+			string[] argspart = {};
+			varc = "";
 			string fsrc = elements[e[q]].params[srcindex].value;
-			fsrc.replace("string[] args) {\n","string[] args) {\n%s".printf(varc));
-			print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
+			if (language == "./r3") {
+				for (int v = 0; v < arglist.length; v++) {
+					argspart += arglist[v];
+					varc = "%s\n%s: read/string to-file system/script/args/%d".printf(varc,argsrc[v],(flagc + v + 1));
+					print("%s\t\t\tEVAL: injecting %s\n",tabs,varc);
+				}
+				if (fsrc.has_prefix("REBOL []")) {
+					fsrc = fsrc.replace("REBOL []\n","REBOL []\n%s\n".printf(varc));
+				} else {
+					if (fsrc.has_prefix("REBOL [ ]")) {
+						fsrc = fsrc.replace("REBOL [ ]\n","REBOL []\n%s\n".printf(varc));
+					}
+				}
+				print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
+			}
+			if (language == "valac") {
+				for (int v = 0; v < arglist.length; v++) {
+					argspart += arglist[v];
+					varc = "%s\nstring %s = args[%d];".printf(varc,argsrc[v],(flagc + v + 1));
+					print("%s\t\t\tEVAL: injecting %s\n",tabs,varc);
+				}
+				fsrc = fsrc.replace("string[] args) {\n","string[] args) {\n%s".printf(varc));
+				print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
+			}
+			if (language == "sh") {
+				for (int v = 0; v < arglist.length; v++) {
+					argspart += arglist[v];
+					varc = "%s\n%s=$(cat \"$%d\");".printf(varc,argsrc[v],(flagc + v + 1));
+					print("%s\t\t\tEVAL: injecting %s\n",tabs,varc);
+				}
+				fsrc = ("%s\n%s\n".printf(varc,fsrc));
+				print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
+			}
+// save source to temp file under /temp/
+			string w = writefiletopath((ind + 8),"",elements[e[q]].params[srcindex].name,ext,fsrc);
+			cleanup += w;
+			if (w != "") {
+				cmd = {language,w,};
+				for (int f = 0; f < evalflags.length; f++) {
+					cmd += evalflags[f];
+				}
+				for (int a = 0; a < argspart.length; a++) {
+					cmd += argspart[a];
+				}
+				//print("%s\t\tEVAL: cmd = %s\n",tabs,cmd);
+				try {
+					string o;
+					Pid prc;
+					GLib.Process.spawn_sync (null,cmd,null,SpawnFlags.SEARCH_PATH,null,out o,null,out prc);
+					print("%s\t\tEVAL: process %d started...\n",tabs,prc);
+					if (elements[e[q]].type == "srcblock") {
+						string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",o);
+						cleanup += wr;
+						elements[e[q]].outputs[0].value = o;
+						print("%s\t\t\tEVAL: process complete.\n",tabs);
+					} else {
+						print("paragraph eval goes here\n");
+					}
+				} catch (SpawnError e) { print ("Error: %s\n", e.message); }
+			}
 		}
-		print("%s\t\tEVAL: cmd = %s\n",tabs,cmd);
 	}
+	print("rm ");
+	for (int k = 0; k < cleanup.length; k++) {
+		print("%s ",cleanup[k]);
+	}
+	print("\n");
 	print("%sEVAL: finished.\n\n",tabs);
+	return true;
 }
 
 void loadmemyorg (int ind, string defile) {
@@ -2187,7 +2315,7 @@ public class OutputRow : Gtk.Box {
 	private Gtk.CssProvider oupcsp;
 	private Gtk.TextTagTable outputvaltextbufftags;
 	private GtkSource.Buffer outputvaltextbuff;
-	private GtkSource.View outputvaltext;
+	public GtkSource.View outputvaltext;
 	private Gtk.ScrolledWindow outputvalscroll;
 	private Gtk.Box outputscrollbox;
 	private Gtk.Box outputsubrow;
@@ -2653,7 +2781,10 @@ public class ParamRow : Gtk.Box {
 							int[] q = {};
 							if (deps.length > 0) { q = evalpath(deps,ee); }
 							q += elements[ee].index;
-							eval(4,q);
+							if(eval(4,q)) {
+								ElementBox elmo = (ElementBox) this.parent.parent.parent.parent;
+								elmo.updatemyoutputs();
+							}
 							doup = true;
 						}
 					});
@@ -2844,6 +2975,23 @@ public class ElementBox : Gtk.Box {
 	private Gtk.DropTarget elmdroptarg;
 	private int dox;
 	private int doy;
+	public void updatemyoutputs() {
+		int ee = getelementindexbyid(elementid);
+		if (elements[ee].outputs.length > 0) {
+			if (elements[ee].outputs[0].value != null) {
+				OutputRow elmo = (OutputRow) elmoutputlistbox.get_first_child();
+				elmo.outputvaltext.buffer.text = elements[ee].outputs[0].value;
+				if (elements[ee].outputs.length > 1) {
+					for (int o = 1; o < elements[ee].outputs.length; o++) {
+						if (elements[ee].outputs[o].value != null) {
+							elmo = (OutputRow) elmoutputlistbox.get_first_child().get_next_sibling();
+							elmo.outputvaltext.buffer.text = elements[ee].outputs[o].value;
+						}
+					}
+				}
+			}
+		}
+	}
 	public ElementBox (int idx, string typ) {
 		print("ELEMENTBOX: started (%d)\n",idx);
 		if (idx < elements.length) {
