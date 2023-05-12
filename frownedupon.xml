@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<style-scheme id="frownedupon" name="Frownedupon" version="1.0">
+	<author>cpbrown</author>
+	<description>frownedupon syntax theme</description>
+
+	<metadata>
+		<property name="variant">dark</property>
+		<property name="light-variant">Adwaita</property>
+	</metadata>
+
+	<!-- colors copied from Adaita-dark -->
+	<color name="blue_1"				value="#99C1F1"/>
+	<color name="blue_2"				value="#62A0EA"/>
+	<color name="blue_3"				value="#3584E4"/>
+	<color name="blue_4"				value="#1C71D8"/>
+	<color name="blue_5"				value="#1A5FB4"/>
+	<color name="blue_6"				value="#1B497E"/>
+	<color name="blue_7"				value="#193D66"/>
+	<color name="brown_1"				value="#CDAB8F"/>
+	<color name="brown_2"				value="#B5835A"/>
+	<color name="brown_3"				value="#986A44"/>
+	<color name="brown_4"				value="#865E3C"/>
+	<color name="brown_5"				value="#63452C"/>
+	<color name="chameleon_3"			value="#4E9A06"/>
+	<color name="dark_1"				value="#0C1D2610"/>
+	<color name="dark_2"				value="#0C1D2640"/>
+	<color name="dark_3"				value="#0C1D2680"/>
+	<color name="dark_4"				value="#0C1D26AA"/>
+	<color name="dark_5"				value="#0C1D26DD"/>
+	<color name="dark_6"				value="#0C1D26FF"/>
+	<color name="green_1"				value="#8FF0A4"/>
+	<color name="green_2"				value="#57E389"/>
+	<color name="green_3"				value="#33D17A"/>
+	<color name="green_4"				value="#2EC27E"/>
+	<color name="green_5"				value="#26A269"/>
+	<color name="green_6"				value="#1F7F56"/>
+	<color name="green_7"				value="#1C6849"/>
+	<color name="bg"					value="#00000000"/>
+	<color name="bg-alt"				value="##50B5F210"/>
+	<color name="light_1"				value="#50B5F210"/>
+	<color name="light_2"				value="#50B5F260"/>
+	<color name="light_3"				value="#50B5F280"/>
+	<color name="light_4"				value="#50B5F2AA"/>
+	<color name="light_5"				value="#50B5F2BB"/>
+	<color name="light_6"				value="#50B5F2DD"/>
+	<color name="light"				value="#50B5F2FF"/>
+	<color name="orange_1"				value="#FFBE6F"/>
+	<color name="orange_2"				value="#FFA348"/>
+	<color name="orange_3"				value="#FF7800"/>
+	<color name="orange_4"				value="#E66100"/>
+	<color name="orange_5"				value="#C64600"/>
+	<color name="purple_1"				value="#DC8ADD"/>
+	<color name="purple_2"				value="#C061CB"/>
+	<color name="purple_3"				value="#9141AC"/>
+	<color name="purple_4"				value="#813D9C"/>
+	<color name="purple_5"				value="#613583"/>
+	<color name="red_1"					value="#F66151"/>
+	<color name="red_2"					value="#ED333B"/>
+	<color name="red_3"					value="#E01B24"/>
+	<color name="red_4"					value="#C01C28"/>
+	<color name="red_5"					value="#A51D2D"/>
+	<color name="teal_1"				value="#93DDC2"/>
+	<color name="teal_2"				value="#5BC8AF"/>
+	<color name="teal_3"				value="#33B2A4"/>
+	<color name="teal_4"				value="#26A1A2"/>
+	<color name="teal_5"				value="#218787"/>
+	<color name="violet_2"				value="#7D8AC7"/>
+	<color name="violet_3"				value="#6362C8"/>
+	<color name="violet_4"				value="#4E57BA"/>
+	<color name="yellow_1"				value="#F9F06B"/>
+	<color name="yellow_2"				value="#F8E45C"/>
+	<color name="yellow_3"				value="#F6D32D"/>
+	<color name="yellow_4"				value="#F5C211"/>
+	<color name="yellow_5"				value="#E5A50A"/>
+	<color name="yellow_6"				value="#D38B09"/>
+
+	<!-- Global Styles -->
+	<style name="background-pattern"	background="bg"/>
+	<style name="bracket-match"			bold="true"/>
+	<style name="current-line"			background="bg-alt"/>
+	<style name="current-line-number"	background="bg-alt" foreground="light"/>
+	<style name="cursor"				foreground="light_5"/>
+	<style name="draw-spaces"			foreground="dark_3"/>
+	<style name="line-numbers"			background="bg" foreground="light_1"/>
+	<style name="map-overlay"			background="dark_1"/>
+	<style name="right-margin"			background="bg" foreground="light"/>
+	<style name="search-match"			background="yellow_4" foreground="dark_4"/>
+	<style name="text"					background="bg" foreground="light"/>
+
+	<!-- Rebol3 -->
+	<style name="rebol:control"			foreground="red_2" bold="true"/>
+	<style name="rebol:series"			foreground="red_1"/>
+	<style name="rebol:comparison"		foreground="purple_1"/>
+	<style name="rebol:logic"			foreground="orange_3"/>
+	<style name="rebol:context"			foreground="brown_1"/>
+	<style name="rebol:system"			foreground="brown_2"/>
+	<style name="rebol:math"			foreground="yellow_2"/>
+	<style name="rebol:comment"			foreground="green_6"/>
+	<style name="rebol:string"			foreground="green_4"/>
+	<style name="rebol:specialstring"	foreground="teal_3"/>
+	<style name="rebol:dataset"			foreground="teal_4"/>
+	<style name="rebol:datatype"		foreground="blue_2"/>
+	<style name="rebol:view"			foreground="blue_4"/>
+	<style name="rebol:help"			foreground="violet_2"/>
+	<style name="rebol:io"				foreground="purple_2"/>
+
+	<!-- Orgmode -->
+	<style name="orgmode:headline"		foreground="red_2" bold="true"/>
+	<style name="orgmode:comment"		foreground="red_1"/>
+	<style name="orgmode:sourceblock"	foreground="purple_1"/>
+	<style name="orgmode:preconfig"		foreground="orange_3"/>
+	<style name="orgmode:config"		foreground="brown_1"/>
+	<style name="orgmode:todo"			foreground="brown_2"/>
+	<style name="orgmode:tag"			foreground="yellow_2"/>
+	<style name="orgmode:priority"		foreground="green_6"/>
+	<style name="orgmode:date"			foreground="green_4"/>
+	<style name="orgmode:table"			foreground="teal_3"/>
+
+	<!-- Python -->
+	<style name="python:string-conversion" foreground="green_4" />
+	<style name="python:builtin-object" foreground="blue_2" />
+	<style name="python:class-name" foreground="teal_2" />
+	<style name="python:decorator" foreground="purple_2" />
+	<style name="python:module-handler" foreground="violet_2" />
+
+	<!-- Defaults -->
+	<style name="def:base-n-integer"         foreground="violet_2"/>
+	<style name="def:boolean"                foreground="violet_2"/>
+	<style name="def:comment"                foreground="dark_1"/>
+	<style name="def:constant"               foreground="violet_2"/>
+	<style name="def:decimal"                foreground="violet_2"/>
+	<style name="def:deletion"               strikethrough="true"/>
+	<style name="def:doc-comment-element"    foreground="light"/>
+	<style name="def:emphasis"               italic="true"/>
+	<style name="def:error"                  underline="error" underline-color="red_4"/>
+	<style name="def:floating-point"         foreground="violet_2"/>
+	<style name="def:function"               foreground="blue_2"/>
+	<style name="def:heading"                foreground="teal_3" bold="true"/>
+	<style name="def:identifier"             foreground="chameleon_3"/>
+	<style name="def:inline-code"            foreground="violet_2"/>
+	<style name="def:link-destination"       foreground="blue_2" italic="true" underline="low"/>
+	<style name="def:link-text"              foreground="red_2"/>
+	<style name="def:list-marker"            foreground="orange_4" bold="true"/>
+	<style name="def:net-address"            foreground="blue_2" underline="low"/>
+	<style name="def:note"                   foreground="dark_4" background="yellow_4" bold="true"/>
+	<style name="def:number"                 foreground="violet_2"/>
+	<style name="def:preformatted-section"   foreground="violet_2"/>
+	<style name="def:preprocessor"           foreground="orange_4"/>
+	<style name="def:shebang"                foreground="light_7" bold="true"/>
+	<style name="def:special-char"           foreground="red_1" bold="false"/>
+	<style name="def:statement"              foreground="orange_2" bold="true"/>
+	<style name="def:string"                 foreground="teal_2"/>
+	<style name="def:strong-emphasis"        bold="true"/>
+	<style name="def:type"                   foreground="teal_2" bold="true"/>
+	<style name="def:underlined"             underline="single"/>
+	<style name="def:warning"                underline="error" underline-color="yellow_4"/>
+
+
+</style-scheme>

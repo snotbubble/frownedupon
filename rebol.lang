@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+keywords copied from code-colorizer.r by David Oliva
+http://www.rebol.org/view-script.r?script=code-colorizer.r
+-->
+
+<language id="rebol" _name="Rebol" version="2.0" _section="Source">
+
+	<metadata>
+		<property name="globs">*.r3;*.r;*.reb</property>
+		<property name="line-comment-start">;</property>
+		<property name="block-comment-start">{</property>
+		<property name="block-comment-end">}</property>
+		<property name="suggested-suffix">.r3</property>
+	</metadata>
+
+	<styles>
+		<style id="escaped" name="escaped"/>
+		<style id="comment" name="comment"/>
+		<style id="string" name="string"/>
+		<style id="datatype" name="datatype"/>
+		<style id="view" name="view"/>
+		<style id="io" name="io"/>
+		<style id="comparison" name="comparison"/>
+		<style id="context" name="context"/>
+		<style id="control" name="control"/>
+		<style id="help" name="help"/>
+		<style id="logic" name="logic"/>
+		<style id="math" name="math"/>
+		<style id="series" name="series"/>
+		<style id="dataset" name="dataset"/>
+		<style id="specialstring" name="specialstring"/>
+		<style id="system" name="system"/>
+	</styles>
+
+	<definitions>
+
+		<context id="line-comment" style-ref="comment" end-at-line-end="true" class="comment" class-disabled="no-spell-check">
+			<start>;</start>
+		</context>
+
+		<context id="rstring" style-ref="string" class="string" end-at-line-end="true">
+			<start>"</start>
+			<end>"</end>
+			<include>
+				<context id="rescape" style-ref="escaped">
+					<match>\^.</match>
+				</context>
+			</include>
+		</context>
+
+		<context id="rbigstring" style-ref="comment" class="comment">
+			<start>{</start>
+			<end>}</end>
+			<include>
+				<context id="rbigescape" style-ref="escaped">
+					<match>\^.</match>
+				</context>
+			</include>
+		</context>
+
+		<context id="rdatatype" style-ref="datatype">
+			<suffix>(?!\w)</suffix>
+			<keyword>any\-block?</keyword>
+			<keyword>any\-function?</keyword>
+			<keyword>any\-string?</keyword>
+			<keyword>any\-type?</keyword>
+			<keyword>any\-word?</keyword>
+			<keyword>as\-pair</keyword>
+			<keyword>binary?</keyword>
+			<keyword>bitset?</keyword>
+			<keyword>block?</keyword>
+			<keyword>char?</keyword>
+			<keyword>construct</keyword>
+			<keyword>datatype?</keyword>
+			<keyword>date?</keyword>
+			<keyword>decimal?</keyword>
+			<keyword>dump\-obj</keyword>
+			<keyword>email?</keyword>
+			<keyword>error?</keyword>
+			<keyword>event?</keyword>
+			<keyword>file?</keyword>
+			<keyword>function?</keyword>
+			<keyword>get\-word?</keyword>
+			<keyword>hash?</keyword>
+			<keyword>image?</keyword>
+			<keyword>integer?</keyword>
+			<keyword>issue?</keyword>
+			<keyword>library?</keyword>
+			<keyword>list?</keyword>
+			<keyword>lit\-path?</keyword>
+			<keyword>lit\-word?</keyword>
+			<keyword>logic?</keyword>
+			<keyword>make</keyword>
+			<keyword>money?</keyword>
+			<keyword>native?</keyword>
+			<keyword>number?</keyword>
+			<keyword>object?</keyword>
+			<keyword>op?</keyword>
+			<keyword>pair?</keyword>
+			<keyword>paren?</keyword>
+			<keyword>path?</keyword>
+			<keyword>port?</keyword>
+			<keyword>refinement?</keyword>
+			<keyword>routine?</keyword>
+			<keyword>series?</keyword>
+			<keyword>set\-path?</keyword>
+			<keyword>set\-word?</keyword>
+			<keyword>string?</keyword>
+			<keyword>struct?</keyword>
+			<keyword>tag?</keyword>
+			<keyword>time?</keyword>
+			<keyword>to\-binary</keyword>
+			<keyword>to\-bitset</keyword>
+			<keyword>to\-block</keyword>
+			<keyword>to\-char</keyword>
+			<keyword>to\-date</keyword>
+			<keyword>to\-decimal</keyword>
+			<keyword>to\-email</keyword>
+			<keyword>to\-file</keyword>
+			<keyword>to\-get-word</keyword>
+			<keyword>to\-hash</keyword>
+			<keyword>to\-hex</keyword>
+			<keyword>to\-idate</keyword>
+			<keyword>to\-image</keyword>
+			<keyword>to\-integer</keyword>
+			<keyword>to\-issue</keyword>
+			<keyword>to\-list</keyword>
+			<keyword>to\-lit-path</keyword>
+			<keyword>to\-lit-word</keyword>
+			<keyword>to\-logic</keyword>
+			<keyword>to\-money</keyword>
+			<keyword>to\-pair</keyword>
+			<keyword>to\-paren</keyword>
+			<keyword>to\-path</keyword>
+			<keyword>to\-refinement</keyword>
+			<keyword>to\-set-path</keyword>
+			<keyword>to\-set-word</keyword>
+			<keyword>to\-string</keyword>
+			<keyword>to\-tag</keyword>
+			<keyword>to\-time</keyword>
+			<keyword>to\-tuple</keyword>
+			<keyword>to\-url</keyword>
+			<keyword>to\-word</keyword>
+			<keyword>tuple?</keyword>
+			<keyword>type?</keyword>
+			<keyword>unset?</keyword>
+			<keyword>url?</keyword>
+			<keyword>word?</keyword>
+			<keyword>to</keyword>
+		</context>
+
+		<context id="rview" style-ref="view">
+			<suffix>(?!\w)</suffix>
+			<keyword>alert</keyword>
+			<keyword>as\-pair</keyword>
+			<keyword>brightness?</keyword>
+			<keyword>caret\-to-offset</keyword>
+			<keyword>center\-face</keyword>
+			<keyword>choose</keyword>
+			<keyword>clear\-fields</keyword>
+			<keyword>dump\-face</keyword>
+			<keyword>flash</keyword>
+			<keyword>focus</keyword>
+			<keyword>hide\-popup</keyword>
+			<keyword>hide</keyword>
+			<keyword>in\-window?</keyword>
+			<keyword>inform</keyword>
+			<keyword>layout</keyword>
+			<keyword>load\-image</keyword>
+			<keyword>make\-face</keyword>
+			<keyword>offset\-to-caret</keyword>
+			<keyword>request\-color</keyword>
+			<keyword>request</keyword>
+			<keyword>request\-date</keyword>
+			<keyword>request\-download</keyword>
+			<keyword>request\-file</keyword>
+			<keyword>request\-list</keyword>
+			<keyword>request\-pass</keyword>
+			<keyword>request\-text</keyword>
+			<keyword>show\-popup</keyword>
+			<keyword>show</keyword>
+			<keyword>size\-text</keyword>
+			<keyword>span?</keyword>
+			<keyword>stylize</keyword>
+			<keyword>unfocus</keyword>
+			<keyword>unview</keyword>
+			<keyword>viewed?</keyword>
+			<keyword>view</keyword>
+			<keyword>within?</keyword>
+		</context>
+
+		<context id="rio" style-ref="io">
+			<suffix>(?!\w)</suffix>
+			<keyword>ask</keyword>
+			<keyword>change\-dir</keyword>
+			<keyword>clean\-path</keyword>
+			<keyword>close</keyword>
+			<keyword>confirm</keyword>
+			<keyword>connected?</keyword>
+			<keyword>delete</keyword>
+			<keyword>dir?</keyword>
+			<keyword>dirize</keyword>
+			<keyword>dispatch</keyword>
+			<keyword>do</keyword>
+			<keyword>echo</keyword>
+			<keyword>exists?</keyword>
+			<keyword>get\-modes</keyword>
+			<keyword>info?</keyword>
+			<keyword>input</keyword>
+			<keyword>input?</keyword>
+			<keyword>list\-dir</keyword>
+			<keyword>load</keyword>
+			<keyword>make\-dir</keyword>
+			<keyword>modified?</keyword>
+			<keyword>open</keyword>
+			<keyword>prin</keyword>
+			<keyword>print</keyword>
+			<keyword>query</keyword>
+			<keyword>read</keyword>
+			<keyword>read\-io</keyword>
+			<keyword>rename</keyword>
+			<keyword>resend</keyword>
+			<keyword>save</keyword>
+			<keyword>script?</keyword>
+			<keyword>secure</keyword>
+			<keyword>send</keyword>
+			<keyword>set\-modes</keyword>
+			<keyword>set\-net</keyword>
+			<keyword>size?</keyword>
+			<keyword>split\-path</keyword>
+			<keyword>suffix?</keyword>
+			<keyword>to\-local-file</keyword>
+			<keyword>to\-rebol-file</keyword>
+			<keyword>update</keyword>
+			<keyword>wait</keyword>
+			<keyword>what\-dir</keyword>
+			<keyword>write\-io</keyword>
+			<keyword>write</keyword>
+		</context>
+
+		<context id="rcomparison" style-ref="comparison">
+			<suffix>(?!\w)</suffix>
+			<keyword>equal?</keyword>
+			<keyword>greater\-or-equal?</keyword>
+			<keyword>greater?</keyword>
+			<keyword>lesser\-or-equal?</keyword>
+			<keyword>lesser?</keyword>
+			<keyword>maximum\-of</keyword>
+			<keyword>minimum\-of</keyword>
+			<keyword>not\-equal?</keyword>
+			<keyword>same?</keyword>
+			<keyword>sign?</keyword>
+			<keyword>strict\-equal?</keyword>
+			<keyword>strict\-not-equal?</keyword>
+		</context>
+
+		<context id="rcontext" style-ref="context">
+			<suffix>(?!\w)</suffix>
+			<keyword>alias</keyword>
+			<keyword>bind</keyword>
+			<keyword>context</keyword>
+			<keyword>get</keyword>
+			<keyword>in</keyword>
+			<keyword>set</keyword>
+			<keyword>unset</keyword>
+			<keyword>use</keyword>
+			<keyword>value?</keyword>
+		</context>
+
+		<context id="rcontrol" style-ref="control">
+			<suffix>(?!\w)</suffix>
+			<keyword>opt</keyword>
+			<keyword>attempt</keyword>
+			<keyword>break</keyword>
+			<keyword>catch</keyword>
+			<keyword>compose</keyword>
+			<keyword>disarm</keyword>
+			<keyword>do\-events</keyword>
+			<keyword>does</keyword>
+			<keyword>either</keyword>
+			<keyword>else</keyword>
+			<keyword>exit</keyword>
+			<keyword>forall</keyword>
+			<keyword>foreach</keyword>
+			<keyword>for</keyword>
+			<keyword>forever</keyword>
+			<keyword>forskip</keyword>
+			<keyword>func</keyword>
+			<keyword>function</keyword>
+			<keyword>halt</keyword>
+			<keyword>has</keyword>
+			<keyword>if</keyword>
+			<keyword>launch</keyword>
+			<keyword>loop</keyword>
+			<keyword>next</keyword>
+			<keyword>quit</keyword>
+			<keyword>reduce</keyword>
+			<keyword>remove\-each</keyword>
+			<keyword>repeat</keyword>
+			<keyword>return</keyword>
+			<keyword>switch</keyword>
+			<keyword>throw</keyword>
+			<keyword>try</keyword>
+			<keyword>until</keyword>
+			<keyword>wait</keyword>
+			<keyword>while</keyword>
+			<keyword>do</keyword>
+		</context>
+
+		<context id="rhelp" style-ref="help">
+			<suffix>(?!\w)</suffix>
+			<keyword>about</keyword>
+			<keyword>comment</keyword>
+			<keyword>dump\-face</keyword>
+			<keyword>dump\-obj</keyword>
+			<keyword>help</keyword>
+			<keyword>license</keyword>
+			<keyword>probe</keyword>
+			<keyword>source</keyword>
+			<keyword>trace</keyword>
+			<keyword>usage</keyword>
+			<keyword>what</keyword>
+		</context>
+
+		<context id="rlogic" style-ref="logic">
+			<suffix>(?!\w)</suffix>
+			<keyword>all</keyword>
+			<keyword>and</keyword>
+			<keyword>any</keyword>
+			<keyword>complement</keyword>
+			<keyword>found?</keyword>
+			<keyword>not</keyword>
+			<keyword>or</keyword>
+			<keyword>xor</keyword>
+			<keyword>on</keyword>
+			<keyword>off</keyword>
+			<keyword>true</keyword>
+			<keyword>false</keyword>
+			<keyword>none</keyword>
+		</context>
+
+		<context id="rmath" style-ref="math">
+			<suffix>(?!\w)</suffix>
+			<keyword>abs</keyword>
+			<keyword>absolute</keyword>
+			<keyword>add</keyword>
+			<keyword>and</keyword>
+			<keyword>arccosine</keyword>
+			<keyword>arcsine</keyword>
+			<keyword>arctangent</keyword>
+			<keyword>cosine</keyword>
+			<keyword>divide</keyword>
+			<keyword>even?</keyword>
+			<keyword>exp</keyword>
+			<keyword>log\-10</keyword>
+			<keyword>log\-2</keyword>
+			<keyword>log\-e</keyword>
+			<keyword>maximum</keyword>
+			<keyword>max</keyword>
+			<keyword>min</keyword>
+			<keyword>minimum</keyword>
+			<keyword>multiply</keyword>
+			<keyword>negate</keyword>
+			<keyword>negative?</keyword>
+			<keyword>not</keyword>
+			<keyword>odd?</keyword>
+			<keyword>or</keyword>
+			<keyword>positive?</keyword>
+			<keyword>power</keyword>
+			<keyword>random</keyword>
+			<keyword>remainder</keyword>
+			<keyword>sine</keyword>
+			<keyword>square\-root</keyword>
+			<keyword>subtract</keyword>
+			<keyword>tangent</keyword>
+			<keyword>zero?</keyword>
+		</context>
+
+		<context id="rseries" style-ref="series">
+			<suffix>(?!\w)</suffix>
+			<keyword>append</keyword>
+			<keyword>array</keyword>
+			<keyword>at</keyword>
+			<keyword>back</keyword>
+			<keyword>change</keyword>
+			<keyword>clear</keyword>
+			<keyword>copy</keyword>
+			<keyword>empty?</keyword>
+			<keyword>end</keyword>
+			<keyword>extract</keyword>
+			<keyword>fifth</keyword>
+			<keyword>find</keyword>
+			<keyword>first</keyword>
+			<keyword>fourth</keyword>
+			<keyword>free</keyword>
+			<keyword>head?</keyword>
+			<keyword>head</keyword>
+			<keyword>index?</keyword>
+			<keyword>insert</keyword>
+			<keyword>intersect</keyword>
+			<keyword>join</keyword>
+			<keyword>last</keyword>
+			<keyword>length?</keyword>
+			<keyword>offset?</keyword>
+			<keyword>parse</keyword>
+			<keyword>pick</keyword>
+			<keyword>poke</keyword>
+			<keyword>random</keyword>
+			<keyword>rejoin</keyword>
+			<keyword>remove</keyword>
+			<keyword>repend</keyword>
+			<keyword>replace</keyword>
+			<keyword>reverse</keyword>
+			<keyword>second</keyword>
+			<keyword>select</keyword>
+			<keyword>skip</keyword>
+			<keyword>some</keyword>
+			<keyword>sort</keyword>
+			<keyword>split</keyword>
+			<keyword>tail?</keyword>
+			<keyword>tail</keyword>
+			<keyword>take</keyword>
+			<keyword>third</keyword>
+			<keyword>thru</keyword>
+			<keyword>with</keyword>
+		</context>
+
+		<context id="rdataset" style-ref="dataset">
+			<suffix>(?!\w)</suffix>
+			<keyword>alter</keyword>
+			<keyword>charset</keyword>
+			<keyword>difference</keyword>
+			<keyword>exclude</keyword>
+			<keyword>extract</keyword>
+			<keyword>intersect</keyword>
+			<keyword>union</keyword>
+			<keyword>unique</keyword>
+		</context>
+
+		<context id="rspecialstring" style-ref="specialstring">
+			<suffix>(?!\w)</suffix>
+			<keyword>build\-tag</keyword>
+			<keyword>checksum</keyword>
+			<keyword>compress</keyword>
+			<keyword>debase</keyword>
+			<keyword>decode\-cgi</keyword>
+			<keyword>decompress</keyword>
+			<keyword>dehex</keyword>
+			<keyword>detab</keyword>
+			<keyword>enbase</keyword>
+			<keyword>entab</keyword>
+			<keyword>form</keyword>
+			<keyword>import\-email</keyword>
+			<keyword>lowercase</keyword>
+			<keyword>mold</keyword>
+			<keyword>parse\-xml</keyword>
+			<keyword>reform</keyword>
+			<keyword>remold</keyword>
+			<keyword>trim</keyword>
+			<keyword>uppercase</keyword>
+		</context>
+
+		<context id="rsystem" style-ref="system">
+			<suffix>(?!\w)</suffix>
+			<keyword>args</keyword>
+			<keyword>browse</keyword>
+			<keyword>component?</keyword>
+			<keyword>link?</keyword>
+			<keyword>now</keyword>
+			<keyword>protect</keyword>
+			<keyword>protect\-system</keyword>
+			<keyword>REBOL</keyword>
+			<keyword>recycle</keyword>
+			<keyword>system</keyword>
+			<keyword>unprotect</keyword>
+			<keyword>upgrade</keyword>
+		</context>
+
+		<context id="rebol">
+			<include>
+				<context ref="rescape"/>
+				<context ref="rbigescape"/>
+				<context ref="line-comment"/>
+				<context ref="rstring"/>
+				<context ref="rbigstring"/>
+				<context ref="rdatatype"/>
+				<context ref="rview"/>
+				<context ref="rio"/>
+				<context ref="rcomparison"/>
+				<context ref="rcontext"/>
+				<context ref="rcontrol"/>
+				<context ref="rhelp"/>
+				<context ref="rlogic"/>
+				<context ref="rmath"/>
+				<context ref="rseries"/>
+				<context ref="rdataset"/>
+				<context ref="rspecialstring"/>
+				<context ref="rsystem"/>
+			</include>
+		</context>
+	</definitions>
+</language>

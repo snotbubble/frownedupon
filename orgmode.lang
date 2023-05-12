@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+keywords obtained from org docs
+https://orgmode.org/manual/Publishing-options.html
+options obtained from docs
+https://orgmode.org/manual/In_002dbuffer-Settings.html
+-->
+
+<language id="orgmode" _name="Orgmode" version="2.0" _section="Source">
+
+	<metadata>
+		<property name="globs">*.org;*.orgmode</property>
+		<property name="line-comment-start"></property>
+		<property name="block-comment-start"></property>
+		<property name="block-comment-end"></property>
+		<property name="suggested-suffix">.org</property>
+	</metadata>
+
+	<styles>
+		<style id="sourceblock" name="sourceblock"/>
+		<style id="preconfig" name="preconfig"/>
+		<style id="headline" name="headline"/>
+		<style id="tag" name="tag"/>
+		<style id="priority" name="priority"/>
+		<style id="property" name="property"/>
+		<style id="comment" name="comment"/>
+		<style id="table" name="table"/>
+		<style id="latex" name="latex"/>
+		<style id="todo" name="todo"/>
+		<style id="date" name="date"/>
+		<style id="link" name="link"/>
+		<style id="options" name="options"/>
+		<style id="startup" name="startup"/>
+		<style id="config" name="config"/>
+		<style id="specialproperties" name="specialproperties"/>
+		<style id="specialtags" name="specialtags"/>
+		<style id="latex" name="latex"/>
+	</styles>
+
+	<definitions>
+
+		<define-regex id="priorities" extended="true" case-sensitive="false">
+			\[\#[\w\d]+\]
+		</define-regex>
+
+		<define-regex id="todos" extended="true" case-sensitive="false">
+			\[[^\#\:($)]+\]
+		</define-regex>
+
+		<context id="ocomment" style-ref="latex" end-at-line-end="true">
+			<start>\\</start>
+		</context>
+
+		<context id="oheadline" style-ref="headline">
+			<start>(^)[\*]+\s</start>
+			<end>(?=(\:|$))</end>
+			<include>
+				<context id="otag" style-ref="tag" end-parent="true">
+					<start>(?&lt;!(^))\:(?=[\w\d\:]+\:($))</start>
+					<end>\:(?=($))</end>
+				</context>
+				<context id="opriority" style-ref="priority" extend-parent="false">
+					 <match>\%{priorities}</match>
+				</context>
+				<context id="otodo" style-ref="todo" extend-parent="false">
+					 <match>\%{todos}</match>
+				</context>
+			</include>
+		</context>
+
+		<context id="opreconfig" style-ref="preconfig" end-at-line-end="true">
+			<start>\# \-\*\- </start>
+		</context>
+
+		<context id="osourceblock" style-ref="sourceblock">
+			<start>\#\+BEGIN\_SRC</start>
+			<end>\#\+END\_SRC</end>
+		</context>
+
+		<context id="otable" style-ref="table">
+			<start>\#\+BEGIN\_TABLE</start>
+			<end>\#\+END\_TABLE</end>
+		</context>
+
+		<context id="oproperty" style-ref="property">
+			<start>\:PROPERTIES\:</start>
+			<end>\:END\:</end>
+			<include>
+				<context id="ospecialproperties" style-ref="specialproperties" extend-parent="false">
+					<match>\b(ALLTAGS|BLOCKED|CATEGORY|CLOCKSUM|CLOCKSUM_T|CLOSED|COLUMNS|DEADLINE|FILE|ITEM|PRIORITY|SCHEDULED|TAGS|TIMESTAMP|TIMESTAMP_IA|TODO)\b</match>
+				</context>
+			</include>
+		</context>
+
+		<!--
+		<context id="otodo" style-ref="todo">
+			<start>\s\[(?=\[^\#]+\])</start>
+			<end>\]\s</end>
+		</context>
+		<context id="opriority" style-ref="priority">
+			<start>\s\[(?=\#[\w\s\d]+\])</start>
+			<end>\]\s</end>
+		</context>
+		-->
+		<context id="odate" style-ref="date">
+			<start>\&lt;(?=([\d\:\-amp\s]+\&gt;))</start>
+			<end>\&gt;(?!\w\s)</end>
+		</context>
+
+		<context id="olink" style-ref="link">
+			<start>\[\[(?=([\S]+\]))</start>
+			<end>\]\](?!([\S]+))</end>
+		</context>
+
+		<context id="ooptions" style-ref="options">
+			<keyword>archived\-trees</keyword>
+			<keyword>exclude\-tags</keyword>
+			<keyword>headline\-levels</keyword>
+			<keyword>language</keyword>
+			<keyword>preserve\-breaks</keyword>
+			<keyword>section\-numbers</keyword>
+			<keyword>select\-tags</keyword>
+			<keyword>with\-author</keyword>
+			<keyword>with\-broken\-links</keyword>
+			<keyword>with\-clocks</keyword>
+			<keyword>with\-creator</keyword>
+			<keyword>with\-date</keyword>
+			<keyword>with\-drawers</keyword>
+			<keyword>with\-email</keyword>
+			<keyword>with\-emphasize</keyword>
+			<keyword>with\-fixed\-width</keyword>
+			<keyword>with\-footnotes</keyword>
+			<keyword>with\-latex</keyword>
+			<keyword>with\-planning</keyword>
+			<keyword>with\-priority</keyword>
+			<keyword>with\-properties</keyword>
+			<keyword>with\-special\-strings</keyword>
+			<keyword>with\-sub\-superscript</keyword>
+			<keyword>with\-tables</keyword>
+			<keyword>with\-tags</keyword>
+			<keyword>with\-tasks</keyword>
+			<keyword>with\-timestamps</keyword>
+			<keyword>with\-title</keyword>
+			<keyword>with\-toc</keyword>
+			<keyword>with\-todo\-keywords</keyword>
+			<keyword>ascii\-bullets</keyword>
+			<keyword>ascii\-caption\-above</keyword>
+			<keyword>ascii\-charset</keyword>
+			<keyword>ascii\-global\-margin</keyword>
+			<keyword>ascii\-format\-drawer\-function</keyword>
+			<keyword>ascii\-format\-inlinetask\-function</keyword>
+			<keyword>ascii\-headline\-spacing</keyword>
+			<keyword>ascii\-indented\-line\-width</keyword>
+			<keyword>ascii\-inlinetask\-width</keyword>
+			<keyword>ascii\-inner\-margin</keyword>
+			<keyword>ascii\-links\-to\-notes</keyword>
+			<keyword>ascii\-list\-margin</keyword>
+			<keyword>ascii\-paragraph\-spacing</keyword>
+			<keyword>ascii\-quote\-margin</keyword>
+			<keyword>ascii\-table\-keep\-all\-vertical\-lines</keyword>
+			<keyword>ascii\-table\-use\-ascii\-art</keyword>
+			<keyword>ascii\-table\-widen\-columns</keyword>
+			<keyword>ascii\-text\-width</keyword>
+			<keyword>ascii\-underline</keyword>
+			<keyword>ascii\-verbatim\-format</keyword>
+			<keyword>beamer\-theme</keyword>
+			<keyword>beamer\-column\-view\-format</keyword>
+			<keyword>beamer\-environments\-extra</keyword>
+			<keyword>beamer\-frame\-default\-options</keyword>
+			<keyword>beamer\-outline\-frame\-options</keyword>
+			<keyword>beamer\-outline\-frame\-title</keyword>
+			<keyword>beamer\-subtitle\-format</keyword>
+			<keyword>html\-allow\-name\-attribute\-in\-anchors</keyword>
+			<keyword>html\-checkbox\-type</keyword>
+			<keyword>html\-container</keyword>
+			<keyword>html\-divs</keyword>
+			<keyword>html\-doctype</keyword>
+			<keyword>html\-extension</keyword>
+			<keyword>html\-footnote\-format</keyword>
+			<keyword>html\-footnote\-separator</keyword>
+			<keyword>html\-footnotes\-section</keyword>
+			<keyword>html\-format\-drawer\-function</keyword>
+			<keyword>html\-format\-headline\-function</keyword>
+			<keyword>html\-format\-inlinetask\-function</keyword>
+			<keyword>html\-head\-extra</keyword>
+			<keyword>html\-head\-include\-default\-style</keyword>
+			<keyword>html\-head\-include\-scripts</keyword>
+			<keyword>html\-head</keyword>
+			<keyword>html\-home/up\-format</keyword>
+			<keyword>html\-html5\-fancy</keyword>
+			<keyword>html\-indent</keyword>
+			<keyword>html\-infojs\-options</keyword>
+			<keyword>html\-infojs\-template</keyword>
+			<keyword>html\-inline\-image\-rules</keyword>
+			<keyword>html\-inline\-images</keyword>
+			<keyword>html\-link\-home</keyword>
+			<keyword>html\-link\-org\-files\-as\-html</keyword>
+			<keyword>html\-link\-up</keyword>
+			<keyword>html\-link\-use\-abs\-url</keyword>
+			<keyword>html\-mathjax\-options</keyword>
+			<keyword>html\-mathjax\-template</keyword>
+			<keyword>html\-equation\-reference\-format</keyword>
+			<keyword>html\-metadata\-timestamp\-format</keyword>
+			<keyword>html\-postamble\-format</keyword>
+			<keyword>html\-postamble</keyword>
+			<keyword>html\-preamble\-format</keyword>
+			<keyword>html\-preamble</keyword>
+			<keyword>html\-self\-link\-headlines</keyword>
+			<keyword>html\-table\-align\-individual\-field</keyword>
+			<keyword>html\-table\-attributes</keyword>
+			<keyword>html\-table\-caption\-above</keyword>
+			<keyword>html\-table\-data\-tags</keyword>
+			<keyword>html\-table\-header\-tags</keyword>
+			<keyword>html\-table\-row\-tags</keyword>
+			<keyword>html\-table\-use\-header\-tags\-for\-first\-column</keyword>
+			<keyword>html\-tag\-class\-prefix</keyword>
+			<keyword>html\-text\-markup\-alist</keyword>
+			<keyword>html\-todo\-kwd\-class\-prefix</keyword>
+			<keyword>html\-toplevel\-hlevel</keyword>
+			<keyword>html\-use\-infojs</keyword>
+			<keyword>html\-validation\-link</keyword>
+			<keyword>html\-viewport</keyword>
+			<keyword>html\-wrap\-src\-lines</keyword>
+			<keyword>html\-xml\-declaration</keyword>
+			<keyword>latex\-active\-timestamp\-format</keyword>
+			<keyword>latex\-caption\-above</keyword>
+			<keyword>latex\-classes</keyword>
+			<keyword>latex\-class</keyword>
+			<keyword>latex\-compiler</keyword>
+			<keyword>latex\-default\-figure\-position</keyword>
+			<keyword>latex\-default\-table\-environment</keyword>
+			<keyword>latex\-default\-table\-mode</keyword>
+			<keyword>latex\-diary\-timestamp\-format</keyword>
+			<keyword>latex\-footnote\-defined\-format</keyword>
+			<keyword>latex\-footnote\-separator</keyword>
+			<keyword>latex\-format\-drawer\-function</keyword>
+			<keyword>latex\-format\-headline\-function</keyword>
+			<keyword>latex\-format\-inlinetask\-function</keyword>
+			<keyword>latex\-hyperref\-template</keyword>
+			<keyword>latex\-image\-default\-height</keyword>
+			<keyword>latex\-image\-default\-option</keyword>
+			<keyword>latex\-image\-default\-width</keyword>
+			<keyword>latex\-images\-centered</keyword>
+			<keyword>latex\-inactive\-timestamp\-format</keyword>
+			<keyword>latex\-inline\-image\-rules</keyword>
+			<keyword>latex\-link\-with\-unknown\-path\-format</keyword>
+			<keyword>latex\-listings\-langs</keyword>
+			<keyword>latex\-listings\-options</keyword>
+			<keyword>latex\-listings</keyword>
+			<keyword>latex\-minted\-langs</keyword>
+			<keyword>latex\-minted\-options</keyword>
+			<keyword>latex\-prefer\-user\-labels</keyword>
+			<keyword>latex\-subtitle\-format</keyword>
+			<keyword>latex\-subtitle\-separate</keyword>
+			<keyword>latex\-table\-scientific\-notation</keyword>
+			<keyword>latex\-tables\-booktabs</keyword>
+			<keyword>latex\-tables\-centered</keyword>
+			<keyword>latex\-text\-markup\-alist</keyword>
+			<keyword>latex\-title\-command</keyword>
+			<keyword>latex\-toc\-command</keyword>
+			<keyword>md\-footnote\-format</keyword>
+			<keyword>md\-footnotes\-section</keyword>
+			<keyword>md\-headline\-style</keyword>
+			<keyword>odt\-content\-template\-file</keyword>
+			<keyword>odt\-display\-outline\-level</keyword>
+			<keyword>odt\-fontify\-srcblocks</keyword>
+			<keyword>odt\-format\-drawer\-function</keyword>
+			<keyword>odt\-format\-headline\-function</keyword>
+			<keyword>odt\-format\-inlinetask\-function</keyword>
+			<keyword>odt\-inline\-formula\-rules</keyword>
+			<keyword>odt\-inline\-image\-rules</keyword>
+			<keyword>odt\-pixels\-per\-inch</keyword>
+			<keyword>odt\-styles\-file</keyword>
+			<keyword>odt\-table\-styles</keyword>
+			<keyword>odt\-use\-date\-fields</keyword>
+			<keyword>texinfo\-active\-timestamp\-format</keyword>
+			<keyword>texinfo\-classes</keyword>
+			<keyword>texinfo\-class</keyword>
+			<keyword>texinfo\-table\-default\-markup</keyword>
+			<keyword>texinfo\-diary\-timestamp\-format</keyword>
+			<keyword>texinfo\-filename</keyword>
+			<keyword>texinfo\-format\-drawer\-function</keyword>
+			<keyword>texinfo\-format\-headline\-function</keyword>
+			<keyword>texinfo\-format\-inlinetask\-function</keyword>
+			<keyword>texinfo\-inactive\-timestamp\-format</keyword>
+			<keyword>texinfo\-link\-with\-unknown\-path\-format</keyword>
+			<keyword>texinfo\-node\-description\-column</keyword>
+			<keyword>texinfo\-table\-scientific\-notation</keyword>
+			<keyword>texinfo\-tables\-verbatim</keyword>
+			<keyword>texinfo\-text\-markup\-alist</keyword>
+		</context>
+
+		<context id="ostartup" style-ref="startup">
+			<keyword>overview</keyword>
+			<keyword>content</keyword>
+			<keyword>showall</keyword>
+			<keyword>show2levels</keyword>
+			<keyword>show3levels</keyword>
+			<keyword>show4levels</keyword>
+			<keyword>show5levels</keyword>
+			<keyword>showeverything</keyword>
+			<keyword>indent</keyword>
+			<keyword>noindent</keyword>
+			<keyword>num</keyword>
+			<keyword>nonum</keyword>
+			<keyword>align</keyword>
+			<keyword>noalign</keyword>
+			<keyword>inlineimages</keyword>
+			<keyword>noinlineimages</keyword>
+			<keyword>logdone</keyword>
+			<keyword>lognotedone</keyword>
+			<keyword>nologdone</keyword>
+			<keyword>logrepeat</keyword>
+			<keyword>lognoterepeat</keyword>
+			<keyword>nologrepeat</keyword>
+			<keyword>lognoteclock\-out</keyword>
+			<keyword>nolognoteclock\-out</keyword>
+			<keyword>logreschedule</keyword>
+			<keyword>lognotereschedule</keyword>
+			<keyword>nologreschedule</keyword>
+			<keyword>logredeadline</keyword>
+			<keyword>lognoteredeadline</keyword>
+			<keyword>nologredeadline</keyword>
+			<keyword>logrefile</keyword>
+			<keyword>lognoterefile</keyword>
+			<keyword>nologrefile</keyword>
+			<keyword>hidestars</keyword>
+			<keyword>showstars</keyword>
+			<keyword>indent</keyword>
+			<keyword>noindent</keyword>
+			<keyword>odd</keyword>
+			<keyword>oddeven</keyword>
+			<keyword>customtime</keyword>
+			<keyword>constcgs</keyword>
+			<keyword>constSI</keyword>
+			<keyword>fninline</keyword>
+			<keyword>fnnoinline</keyword>
+			<keyword>fnlocal</keyword>
+			<keyword>fnprompt</keyword>
+			<keyword>fnauto</keyword>
+			<keyword>fnconfirm</keyword>
+			<keyword>fnadjust</keyword>
+			<keyword>nofnadjust</keyword>
+			<keyword>hideblocks</keyword>
+			<keyword>nohideblocks</keyword>
+			<keyword>entitiespretty</keyword>
+			<keyword>entitiesplain</keyword>
+			<keyword>hidestars</keyword>
+			<keyword>showstars</keyword>
+		</context>
+
+		<context id="oconfig" style-ref="config">
+			<prefix>(^)\#\+</prefix>
+			<suffix>\:</suffix>
+			<keyword>ARCHIVE</keyword>
+			<keyword>ATTR_HTML</keyword>
+			<keyword>ATTR_LATEX</keyword>
+			<keyword>AUTHOR</keyword>
+			<keyword>BEAMER_FONT_THEME</keyword>
+			<keyword>BEAMER_HEADER</keyword>
+			<keyword>BEAMER_INNER_THEME</keyword>
+			<keyword>BEAMER_OUTER_THEME</keyword>
+			<keyword>BEAMER_THEME</keyword>
+			<keyword>CALL</keyword>
+			<keyword>CAPTION</keyword>
+			<keyword>CATEGORY</keyword>
+			<keyword>COLUMNS</keyword>
+			<keyword>CONSTANTS</keyword>
+			<keyword>CREATOR</keyword>
+			<keyword>DATE</keyword>
+			<keyword>DESCRIPTION</keyword>
+			<keyword>EMAIL</keyword>
+			<keyword>EXCLUDE_TAGS</keyword>
+			<keyword>EXPORT_FILE_NAME</keyword>
+			<keyword>HEADER</keyword>
+			<keyword>HTML</keyword>
+			<keyword>HTML_HEAD</keyword>
+			<keyword>HTML_HEAD_EXTRA</keyword>
+			<keyword>HTML_MATHJAX</keyword>
+			<keyword>FILETAGS</keyword>
+			<keyword>KEYWORDS</keyword>
+			<keyword>LANGUAGE</keyword>
+			<keyword>LATEX_CLASS</keyword>
+			<keyword>LATEX_CLASS_OPTIONS</keyword>
+			<keyword>LATEX_COMPILER</keyword>
+			<keyword>LATEX_HEADER</keyword>
+			<keyword>LATEX_HEADER_EXTRA</keyword>
+			<keyword>LINK</keyword>
+			<keyword>NAME</keyword>
+			<keyword>OPTIONS</keyword>
+			<keyword>ORGTBL</keyword>
+			<keyword>PRIORITIES</keyword>
+			<keyword>PROPERTY</keyword>
+			<keyword>RESULTS</keyword>
+			<keyword>SELECT_TAGS</keyword>
+			<keyword>SETUPFILE</keyword>
+			<keyword>SEQ_TODO</keyword>
+			<keyword>STARTUP</keyword>
+			<keyword>SUBTITLE</keyword>
+			<keyword>TAGS</keyword>
+			<keyword>TITLE</keyword>
+			<keyword>TOC</keyword>
+			<keyword>TODO</keyword>
+			<keyword>TYP_TODO</keyword>
+		</context>
+		<!--
+		<context id="ospecialproperties" style-ref="specialproperties">
+			<prefix>\:</prefix>
+			<suffix>\:</suffix>
+			<keyword>ALLTAGS</keyword>
+			<keyword>BLOCKED</keyword>
+			<keyword>CATEGORY</keyword>
+			<keyword>CLOCKSUM</keyword>
+			<keyword>CLOCKSUM_T</keyword>
+			<keyword>CLOSED</keyword>
+			<keyword>COLUMNS</keyword>
+			<keyword>DEADLINE</keyword>
+			<keyword>FILE</keyword>
+			<keyword>ITEM</keyword>
+			<keyword>PRIORITY</keyword>
+			<keyword>SCHEDULED</keyword>
+			<keyword>TAGS</keyword>
+			<keyword>TIMESTAMP</keyword>
+			<keyword>TIMESTAMP_IA</keyword>
+			<keyword>TODO</keyword>
+		</context>
+		-->
+		<context id="ospecialtags" style-ref="specialtags">
+			<keyword>noexport</keyword>
+			<keyword>crypt</keyword>
+		</context>
+
+		<context id="olatex" style-ref="latex">
+			<keyword>addcontentsline</keyword>
+			<keyword>addtocontents</keyword>
+			<keyword>addtocounter</keyword>
+			<keyword>address</keyword>
+			<keyword>addtolength</keyword>
+			<keyword>addvspace</keyword>
+			<keyword>alph</keyword>
+			<keyword>appendix</keyword>
+			<keyword>arabic</keyword>
+			<keyword>author</keyword>
+			<keyword>backslash</keyword>
+			<keyword>baselineskip</keyword>
+			<keyword>baselinestretch</keyword>
+			<keyword>begin</keyword>
+			<keyword>bfseries</keyword>
+			<keyword>bibitem</keyword>
+			<keyword>bigskipamount</keyword>
+			<keyword>bigskip</keyword>
+			<keyword>boldmath</keyword>
+			<keyword>boldsymbol</keyword>
+			<keyword>cal</keyword>
+			<keyword>caption</keyword>
+			<keyword>cdots</keyword>
+			<keyword>centering</keyword>
+			<keyword>chapter</keyword>
+			<keyword>circle</keyword>
+			<keyword>cite</keyword>
+			<keyword>cleardoublepage</keyword>
+			<keyword>clearpage</keyword>
+			<keyword>cline</keyword>
+			<keyword>closing</keyword>
+			<keyword>color</keyword>
+			<keyword>copyright</keyword>
+			<keyword>dashbox</keyword>
+			<keyword>date</keyword>
+			<keyword>ddots</keyword>
+			<keyword>documentclass</keyword>
+			<keyword>dotfill</keyword>
+			<keyword>dfrac</keyword>
+			<keyword>em</keyword>
+			<keyword>emph</keyword>
+			<keyword>end</keyword>
+			<keyword>ensuremath</keyword>
+			<keyword>epigraph</keyword>
+			<keyword>euro</keyword>
+			<keyword>fbox</keyword>
+			<keyword>flushbottom</keyword>
+			<keyword>fnsymbol</keyword>
+			<keyword>footnote</keyword>
+			<keyword>footnotemark</keyword>
+			<keyword>footnotesize</keyword>
+			<keyword>footnotetext</keyword>
+			<keyword>frac</keyword>
+			<keyword>frame</keyword>
+			<keyword>framebox</keyword>
+			<keyword>frenchspacing</keyword>
+			<keyword>hfill</keyword>
+			<keyword>hline</keyword>
+			<keyword>href</keyword>
+			<keyword>hrulefill</keyword>
+			<keyword>hspace</keyword>
+			<keyword>huge</keyword>
+			<keyword>Huge</keyword>
+			<keyword>hyphenation</keyword>
+			<keyword>include</keyword>
+			<keyword>includegraphics</keyword>
+			<keyword>includeonly</keyword>
+			<keyword>indent</keyword>
+			<keyword>input</keyword>
+			<keyword>itshape</keyword>
+			<keyword>item</keyword>
+			<keyword>kill</keyword>
+			<keyword>label</keyword>
+			<keyword>large</keyword>
+			<keyword>Large</keyword>
+			<keyword>LARGE</keyword>
+			<keyword>LaTeX</keyword>
+			<keyword>LaTeXe</keyword>
+			<keyword>ldots</keyword>
+			<keyword>left</keyword>
+			<keyword>lefteqn</keyword>
+			<keyword>line</keyword>
+			<keyword>linebreak</keyword>
+			<keyword>linethickness</keyword>
+			<keyword>linewidth</keyword>
+			<keyword>listoffigures</keyword>
+			<keyword>listoftables</keyword>
+			<keyword>location</keyword>
+			<keyword>makebox</keyword>
+			<keyword>maketitle</keyword>
+			<keyword>markboth</keyword>
+			<keyword>markright</keyword>
+			<keyword>mathcal</keyword>
+			<keyword>mathop</keyword>
+			<keyword>mbox</keyword>
+			<keyword>medskip</keyword>
+			<keyword>multicolumn</keyword>
+			<keyword>multiput</keyword>
+			<keyword>newcommand</keyword>
+			<keyword>newcolumntype</keyword>
+			<keyword>newcounter</keyword>
+			<keyword>newenvironment</keyword>
+			<keyword>newfont</keyword>
+			<keyword>newlength</keyword>
+			<keyword>newline</keyword>
+			<keyword>newpage</keyword>
+			<keyword>newsavebox</keyword>
+			<keyword>newtheorem</keyword>
+			<keyword>nocite</keyword>
+			<keyword>noindent</keyword>
+			<keyword>nolinebreak</keyword>
+			<keyword>nonfrenchspacing</keyword>
+			<keyword>normalsize</keyword>
+			<keyword>nopagebreak</keyword>
+			<keyword>not</keyword>
+			<keyword>onecolumn</keyword>
+			<keyword>opening</keyword>
+			<keyword>oval</keyword>
+			<keyword>overbrace</keyword>
+			<keyword>overline</keyword>
+			<keyword>pagebreak</keyword>
+			<keyword>pagenumbering</keyword>
+			<keyword>pageref</keyword>
+			<keyword>pagestyle</keyword>
+			<keyword>par</keyword>
+			<keyword>paragraph</keyword>
+			<keyword>parbox</keyword>
+			<keyword>parindent</keyword>
+			<keyword>parskip</keyword>
+			<keyword>part</keyword>
+			<keyword>protect</keyword>
+			<keyword>providecommand</keyword>
+			<keyword>put</keyword>
+			<keyword>quad</keyword>
+			<keyword>qquad</keyword>
+			<keyword>raggedbottom</keyword>
+			<keyword>raggedleft</keyword>
+			<keyword>raggedright</keyword>
+			<keyword>raisebox</keyword>
+			<keyword>ref</keyword>
+			<keyword>renewcommand</keyword>
+			<keyword>right</keyword>
+			<keyword>rmfamily</keyword>
+			<keyword>roman</keyword>
+			<keyword>rule</keyword>
+			<keyword>savebox</keyword>
+			<keyword>sbox</keyword>
+			<keyword>scshape</keyword>
+			<keyword>scriptsize</keyword>
+			<keyword>section</keyword>
+			<keyword>setcounter</keyword>
+			<keyword>setlength</keyword>
+			<keyword>settowidth</keyword>
+			<keyword>sffamily</keyword>
+			<keyword>shortstack</keyword>
+			<keyword>signature</keyword>
+			<keyword>slshape</keyword>
+			<keyword>slash</keyword>
+			<keyword>small</keyword>
+			<keyword>smallskip</keyword>
+			<keyword>sout</keyword>
+			<keyword>space</keyword>
+			<keyword>sqrt</keyword>
+			<keyword>stackrel</keyword>
+			<keyword>stepcounter</keyword>
+			<keyword>subparagraph</keyword>
+			<keyword>subsection</keyword>
+			<keyword>subsubsection</keyword>
+			<keyword>tableofcontents</keyword>
+			<keyword>telephone</keyword>
+			<keyword>TeX</keyword>
+			<keyword>textbf</keyword>
+			<keyword>textcolor</keyword>
+			<keyword>textit</keyword>
+			<keyword>textmd</keyword>
+			<keyword>textnormal</keyword>
+			<keyword>textrm</keyword>
+			<keyword>textsc</keyword>
+			<keyword>textsf</keyword>
+			<keyword>textsl</keyword>
+			<keyword>texttt</keyword>
+			<keyword>textup</keyword>
+			<keyword>textwidth</keyword>
+			<keyword>textheight</keyword>
+			<keyword>thanks</keyword>
+			<keyword>thispagestyle</keyword>
+			<keyword>tiny</keyword>
+			<keyword>title</keyword>
+			<keyword>today</keyword>
+			<keyword>ttfamily</keyword>
+			<keyword>twocolumn</keyword>
+			<keyword>typeout</keyword>
+			<keyword>typein</keyword>
+			<keyword>uline</keyword>
+			<keyword>underbrace</keyword>
+			<keyword>underline</keyword>
+			<keyword>unitlength</keyword>
+			<keyword>usebox</keyword>
+			<keyword>usecounter</keyword>
+			<keyword>uwave</keyword>
+			<keyword>value</keyword>
+			<keyword>vbox</keyword>
+			<keyword>vcenter</keyword>
+			<keyword>vdots</keyword>
+			<keyword>vector</keyword>
+			<keyword>verb</keyword>
+			<keyword>verbatim</keyword>
+			<keyword>vfill</keyword>
+			<keyword>vline</keyword>
+			<keyword>vphantom</keyword>
+		</context>
+
+		<context id="orgmode">
+			<include>
+				<context ref="osourceblock"/>
+				<context ref="opreconfig"/>
+				<context ref="oheadline"/>
+				<context ref="otag"/>
+				<context ref="oproperty"/>
+				<context ref="opriority"/>
+				<context ref="ocomment"/>
+				<context ref="olatex"/>
+				<context ref="otable"/>
+				<context ref="odate"/>
+				<context ref="olink"/>
+				<context ref="otodo"/>
+				<context ref="ooptions"/>
+				<context ref="ostartup"/>
+				<context ref="oconfig"/>
+				<context ref="ospecialproperties"/>
+				<context ref="ospecialtags"/>
+				<context ref="olatex"/>
+			</include>
+		</context>
+	</definitions>
+</language>
