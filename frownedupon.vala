@@ -3,16 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: brain surgery (changed my mind about not using pointers)
-//
-// incompatibilities with org, so far...
-// - no inline columnview (table from property drawers).
-// - [[val:var]] link type is supported here (in paragraphs only), but not in org.
-// - naming is independent of linking as it uses ids,
-//   frownedupon will link stuff by name (or reference to name) on load, 
-//   but after that you can link any output to any input, including property drawers,
-//   which may not work with org-entry-get in org.
-//   for now I'll assume the user knows this and will decide for themselves
+// status: deciphering columnview...
 
 
 using GLib;
