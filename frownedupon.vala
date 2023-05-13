@@ -1203,14 +1203,12 @@ int findtable (int l, int ind, string n) {
 					ee.name = tablename;
 					ee.type = "table";
 					ee.id = makemeahash(ee.name,(tln+rc));
-					output oo = output();
+					param oo = param();
 					oo.name = makemeauniqueoutputname(tablename.concat("_spreadsheet"));
 					oo.id = makemeahash(oo.name,(tln+rc));
+					oo.type = "table";
 					oo.value = csv;
-					oo.ebuff = ee.id;
-					outputs += oo;
-					ee.outputs += &outputs[(outputs.length - 1)];
-					ee.obuff += oo.id;
+					ee.params += oo;
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
 						param ii = param();
@@ -1227,6 +1225,7 @@ int findtable (int l, int ind, string n) {
 // org-sbe vals need to be obtained after an eval
 // so we just store its org syntax for now
 								ff.org = themathorgvars[x];
+								ff.defaultv = ff.org;
 								ff.ebuff = ee.id;
 								inputs += ff;
 								ee.inputs += &inputs[(inputs.length - 1)];
@@ -2613,6 +2612,10 @@ public class OutputRow : Gtk.Box {
 		}
 	}
 }
+public class Bulls : Object {
+	public int index { get; set; }
+	public string[] value { get; set; }
+}
 
 public class ParamRow : Gtk.Box {
 	private Gtk.Entry paramvar;
@@ -2634,6 +2637,10 @@ public class ParamRow : Gtk.Box {
 	private Gtk.EventControllerFocus paramvalevc;
 	private GtkSource.Gutter paramvaltextgutter;
 	private bool edited;
+	//private Gtk.TreeIter paramtreeiter;
+	private GLib.ListStore paramtreestore;
+	private Gtk.ColumnView paramcolumnview;
+	//private Gtk.TreeModelSort paramsortmodel;
 	public uint elementid;
 	public uint paramid;
 	public string language;
@@ -2696,6 +2703,84 @@ public class ParamRow : Gtk.Box {
 				paramcontainer.margin_bottom = 4;
 			}
 			paramsubrow = new Gtk.Box(HORIZONTAL,4);
+// table
+			if (elements[e].params[idx].type == "table") {
+				print("PARAMROW: making table ui for: %s\n",elements[e].params[idx].name);
+				string[] csvrows = elements[e].params[idx].value.split("\n");
+				string[] csvcols = csvrows[0].split(";");
+				string[] hedcols = csvcols;
+				if (csvrows.length > 0) {
+					paramsubrow.append(paramvar);
+					paramvalscroll = new Gtk.ScrolledWindow();
+					paramvalscroll.height_request = 200;
+					//paramtreeiter = new Gtk.TreeIter();
+					Type[] ctypes = new Type[csvcols.length];;
+					for (int c = 0; c < csvcols.length; c++) {
+						ctypes[c]= typeof(string);
+					}
+					//GLib.VariantType[] ctypes = new GLib.VariantType[csvcols.length];
+					//for (int c = 0; c < csvcols.length; c++) {
+					//	ctypes[c] = new GLib.VariantType("g_variant_type_string");
+					//}
+					print("PARAMROW: making liststore...\n");
+					paramtreestore = new GLib.ListStore(typeof(Bulls));
+					//paramtreestore.set_column_types(ctypes);
+					Bulls[] vals = new Bulls[csvrows.length];
+					print("PARAMROW: populating liststore...\n");
+/*
+					for (int j = 0; j < csvcols.length; j++) {
+						string[] tmpv = new string[csvrows.length];
+						vals[j] = new Bulls();
+						for (int r = 0; r < csvrows.length; r++) {
+							string[] ccv = csvrows[r].split(";");
+							tmpv += ccv[j];
+							vals[j].index = r;
+						}
+						vals[j].value = tmpv;
+						paramtreestore.append(vals[j]);
+					}
+*/
+					for (int r = 0; r < csvrows.length; r++) {
+						csvcols = csvrows[r].split(";");
+						if (csvcols.length == hedcols.length) {
+							vals[r] = new Bulls();
+							vals[r].value = csvcols;
+							vals[r].index = r;
+							paramtreestore.append(vals[r]);
+						}
+					}
+						
+					print("PARAMROW: making selection model...\n");
+					Gtk.SingleSelection ssel = new Gtk.SingleSelection(paramtreestore);
+					print("PARAMROW: making columnview...\n");
+					paramcolumnview = new Gtk.ColumnView(ssel);
+					csvcols = csvrows[0].split(";");
+					print("PARAMROW: populating columnview...\n");
+					for (int c = 0; c < csvcols.length; c++) {
+						//var lif = new Gtk.SignalListItemFactory();
+						//lif.setup.connect ((item) => {
+						//	item.child = new Gtk.Entry();
+						//	item.child.text = csvcols[
+						//});
+						//lif.bind.connect(ambound);
+						Gtk.ColumnViewColumn cc = new Gtk.ColumnViewColumn(csvcols[c],c);
+						//cc.title = csvcols[c];
+						//cc.text_column = c;
+						//Gtk.CellRendererText txr = new Gtk.CellRendererText();
+						//cc.pack_start(txr, true);
+						//cc.add_attribute(txr, "text", c);
+						paramcolumnview.append_column(cc);
+					}
+					//paramfiltermodel = new Gtk.TreeModelFilter(paramtreestore,null);
+					//paramsortmodel = new Gtk.TreeModelSort.with_model(paramtreestore);
+					//for (int v = 0; v < csvcols.length; v++) {
+					//	paramtreeview.insert_column_with_attributes(-1, csvcols[v], new Gtk.CellRendererText(),"text",(v+1));
+					//}
+					//paramcolumnview.set_model(paramtreestore);
+					paramvalscroll.set_child(paramcolumnview);
+				}
+				print("PARAMROW: made table ui.\n");
+			}
 
 // editable multiline text params
 			if (elements[e].params[idx].type == "source") {
@@ -2789,18 +2874,20 @@ public class ParamRow : Gtk.Box {
 						}
 					});
 					paramsubrow.append(parameval);
+					paramvalscroll.set_child(paramvaltext);
 				}
+			}
+			if (elements[e].params[idx].type == "source" || elements[e].params[idx].type == "table" ) {
 				paramsubrow.margin_top = 0;
 				paramsubrow.margin_end = 4;
 				paramsubrow.margin_start = 4;
 				paramsubrow.margin_bottom = 0;
-				paramsubrow.append(paramvalmaxi);
-				paramvalscroll.set_child(paramvaltext);
 				paramvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				paramvalscroll.get_style_context().add_class("xx");
 				paramvaltext.vexpand = true;
 				paramcontainer.append(paramsubrow);
 				paramcontainer.append(paramvalscroll);
+				paramsubrow.append(paramvalmaxi);
 				paramvalmaxi.toggled.connect(() => {
 
 // ModalBox/box(content)/ParamBox/scrolledWindow(pscroll)/box(pbox)/ElementBox/box(parabox)/box(paraparamox)/box(paraparamlistbox)/this.oututcontainer
@@ -2870,11 +2957,17 @@ public class InputRow : Gtk.Box {
 			inputvar.get_style_context().add_provider(lblcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			inputvar.get_style_context().add_class("xx");
 			inputvar.margin_start = 10;
+			print("INPUTROW:\tinput name: %s\n",inputs[idx].name);
+			print("INPUTROW:\tinput default org: %s\n",inputs[idx].org);
 			inputvar.set_text(inputs[idx].name);
 			inputdefvar = new Gtk.Entry();
 			inputdefvar.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);	
 			inputdefvar.get_style_context().add_class("xx");
-			inputdefvar.set_text(inputs[idx].defaultv);
+			inputdefvar.set_text("");
+			if (inputs[idx].defaultv != null) {
+				print("INPUTROW:\tinput default value: %s\n",inputs[idx].defaultv);
+				inputdefvar.set_text(inputs[idx].defaultv);
+			}
 			inputdefvar.hexpand = true;
 			inputshowval = new Gtk.ToggleButton();
 			inputshowval.icon_name = "user-invisible";
