@@ -3,7 +3,16 @@
 // by c.p.brown 2023
 //
 //
-// status: deciphering columnview...
+// status: brain surgery (changed my mind about not using pointers)
+//
+// incompatibilities with org, so far...
+// - no inline columnview (table from property drawers).
+// - [[val:var]] link type is supported here (in paragraphs only), but not in org.
+// - naming is independent of linking as it uses ids,
+//   frownedupon will link stuff by name (or reference to name) on load, 
+//   but after that you can link any output to any input, including property drawers,
+//   which may not work with org-entry-get in org.
+//   for now I'll assume the user knows this and will decide for themselves
 
 
 using GLib;
@@ -1135,7 +1144,11 @@ int findtable (int l, int ind, string n) {
 				string csv = "";
 				for (int i = 0; i < rc; i++) {
 					for (int q = 0; q < cc; q++) {
-						csv = csv.concat(matx[i,q],";");
+						if (q == (cc - 1)) {
+							csv = csv.concat(matx[i,q]);
+						} else {
+							csv = csv.concat(matx[i,q],";");
+						}
 					}
 					csv = csv.concat("\n");
 				}
@@ -2603,10 +2616,6 @@ public class OutputRow : Gtk.Box {
 		}
 	}
 }
-public class Bulls : Object {
-	public int index { get; set; }
-	public string[] value { get; set; }
-}
 
 public class ParamRow : Gtk.Box {
 	private Gtk.Entry paramvar;
@@ -2618,6 +2627,8 @@ public class ParamRow : Gtk.Box {
 	private Gtk.TextTagTable paramvaltextbufftags;
 	private GtkSource.Buffer paramvaltextbuff;
 	private GtkSource.View paramvaltext;
+	private Gtk.TextView paramvalorgtable;
+	private Gtk.TextBuffer paramvalorgtablebuff;
 	private Gtk.ScrolledWindow paramvalscroll;
 	private Gtk.Box paramscrollbox;
 	private Gtk.Box paramsubrow;
@@ -2698,79 +2709,66 @@ public class ParamRow : Gtk.Box {
 			if (elements[e].params[idx].type == "table") {
 				print("PARAMROW: making table ui for: %s\n",elements[e].params[idx].name);
 				string[] csvrows = elements[e].params[idx].value.split("\n");
+				int rowcount = 0;
+				for (int r = 0; r < csvrows.length; r++) {
+					if (csvrows[r].strip() != "") {
+						rowcount += 1;
+					}
+				}
+				if (rowcount != csvrows.length) { print("PARAMROW: rowcount %d != csvrows.length %d\n",rowcount,csvrows.length); }
 				string[] csvcols = csvrows[0].split(";");
 				string[] hedcols = csvcols;
-				if (csvrows.length > 0) {
+					if (rowcount > 0) {
+					print("PARAMROW: adding gtksourceview field for %s\n",elements[e].type);
+					paramsubrow = new Gtk.Box(HORIZONTAL,4);
 					paramsubrow.append(paramvar);
+					paramscrollbox = new Gtk.Box(VERTICAL,10);
 					paramvalscroll = new Gtk.ScrolledWindow();
 					paramvalscroll.height_request = 200;
-					//paramtreeiter = new Gtk.TreeIter();
-					Type[] ctypes = new Type[csvcols.length];;
-					for (int c = 0; c < csvcols.length; c++) {
-						ctypes[c]= typeof(string);
-					}
-					//GLib.VariantType[] ctypes = new GLib.VariantType[csvcols.length];
-					//for (int c = 0; c < csvcols.length; c++) {
-					//	ctypes[c] = new GLib.VariantType("g_variant_type_string");
-					//}
-					print("PARAMROW: making liststore...\n");
-					paramtreestore = new GLib.ListStore(typeof(Bulls));
-					//paramtreestore.set_column_types(ctypes);
-					Bulls[] vals = new Bulls[csvrows.length];
-					print("PARAMROW: populating liststore...\n");
-/*
-					for (int j = 0; j < csvcols.length; j++) {
-						string[] tmpv = new string[csvrows.length];
-						vals[j] = new Bulls();
-						for (int r = 0; r < csvrows.length; r++) {
-							string[] ccv = csvrows[r].split(";");
-							tmpv += ccv[j];
-							vals[j].index = r;
+					paramvaltextbufftags = new Gtk.TextTagTable();
+					paramvalorgtablebuff = new Gtk.TextBuffer(paramvaltextbufftags);
+					paramvalorgtable = new Gtk.TextView.with_buffer(paramvalorgtablebuff);
+					paramvalorgtable.buffer.set_text(elements[e].params[idx].value);
+					//paramvalorgtable.accepts_tab = true;
+					paramvalorgtable.set_monospace(true);
+					//paramvalorgtable.tab_width = 2;
+					//paramvalorgtable.indent_on_tab = true;
+					//paramvalorgtable.indent_width = 4;
+					//paramvalorgtable.show_line_numbers = true;
+					//paramvalorgtable.highlight_current_line = true;
+					paramvalorgtable.vexpand = true;
+					paramvalorgtable.hexpand = true;
+					paramvalorgtable.top_margin = 0;
+					paramvalorgtable.left_margin = 0;
+					paramvalorgtable.right_margin = 0;
+					paramvalorgtable.bottom_margin = 0;
+					//paramvalorgtable.space_drawer.enable_matrix = true;
+					//paramvalorgtablebuff.set_highlight_syntax(true);
+					//paramvalorgtablebuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("frownedupon"));
+					//paramvalorgtablebuff.set_language(GtkSource.LanguageManager.get_default().get_language("orgmode"));
+					Gtk.EventControllerKey keypress = new Gtk.EventControllerKey();
+					paramvalorgtable.add_controller(keypress);
+					keypress.key_pressed.connect((kv,kc) => {
+						//print("key val = %u code = %u\n",kv,kc);
+						if (kv == Gdk.Key.Tab) {
+							print("tab key val = %u code = %u\n",kv,kc);
+							return true;
 						}
-						vals[j].value = tmpv;
-						paramtreestore.append(vals[j]);
-					}
-*/
-					for (int r = 0; r < csvrows.length; r++) {
-						csvcols = csvrows[r].split(";");
-						if (csvcols.length == hedcols.length) {
-							vals[r] = new Bulls();
-							vals[r].value = csvcols;
-							vals[r].index = r;
-							paramtreestore.append(vals[r]);
+						return false;
+					});
+					keypress.key_released.connect((kv,kc) => {
+						//print("key release val = %u code = %u\n",kv,kc);
+						if (kv == Gdk.Key.Tab) {
+							print("tab key release val = %u code = %u\n",kv,kc);
 						}
-					}
-						
-					print("PARAMROW: making selection model...\n");
-					Gtk.SingleSelection ssel = new Gtk.SingleSelection(paramtreestore);
-					print("PARAMROW: making columnview...\n");
-					paramcolumnview = new Gtk.ColumnView(ssel);
-					csvcols = csvrows[0].split(";");
-					print("PARAMROW: populating columnview...\n");
-					for (int c = 0; c < csvcols.length; c++) {
-						//var lif = new Gtk.SignalListItemFactory();
-						//lif.setup.connect ((item) => {
-						//	item.child = new Gtk.Entry();
-						//	item.child.text = csvcols[
-						//});
-						//lif.bind.connect(ambound);
-						Gtk.ColumnViewColumn cc = new Gtk.ColumnViewColumn(csvcols[c],c);
-						//cc.title = csvcols[c];
-						//cc.text_column = c;
-						//Gtk.CellRendererText txr = new Gtk.CellRendererText();
-						//cc.pack_start(txr, true);
-						//cc.add_attribute(txr, "text", c);
-						paramcolumnview.append_column(cc);
-					}
-					//paramfiltermodel = new Gtk.TreeModelFilter(paramtreestore,null);
-					//paramsortmodel = new Gtk.TreeModelSort.with_model(paramtreestore);
-					//for (int v = 0; v < csvcols.length; v++) {
-					//	paramtreeview.insert_column_with_attributes(-1, csvcols[v], new Gtk.CellRendererText(),"text",(v+1));
-					//}
-					//paramcolumnview.set_model(paramtreestore);
-					paramvalscroll.set_child(paramcolumnview);
+					});
+					paramvalorgtable.preedit_changed.connect((s) => {
+						print("preedit = %s\n",s);
+					});
 				}
 				print("PARAMROW: made table ui.\n");
+				paramvalorgtable.vexpand = true;
+				paramvalscroll.set_child(paramvalorgtable);
 			}
 
 // editable multiline text params
@@ -2827,12 +2825,6 @@ public class ParamRow : Gtk.Box {
 					}
 				});
 
-// expand toggle
-				paramvalmaxi = new Gtk.ToggleButton();
-				paramvalmaxi.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
-				paramvalmaxi.get_style_context().add_class("xx");
-				paramvalmaxi.icon_name = "view-fullscreen";
-
 // add eval button to src
 				if (elements[e].type == "srcblock") {
 					print("PARAMROW:\tadding paragraph eval button...\n");
@@ -2865,17 +2857,22 @@ public class ParamRow : Gtk.Box {
 						}
 					});
 					paramsubrow.append(parameval);
-					paramvalscroll.set_child(paramvaltext);
 				}
+				paramvaltext.vexpand = true;
+				paramvalscroll.set_child(paramvaltext);
 			}
 			if (elements[e].params[idx].type == "source" || elements[e].params[idx].type == "table" ) {
+// expand toggle
+				paramvalmaxi = new Gtk.ToggleButton();
+				paramvalmaxi.get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paramvalmaxi.get_style_context().add_class("xx");
+				paramvalmaxi.icon_name = "view-fullscreen";
 				paramsubrow.margin_top = 0;
 				paramsubrow.margin_end = 4;
 				paramsubrow.margin_start = 4;
 				paramsubrow.margin_bottom = 0;
 				paramvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				paramvalscroll.get_style_context().add_class("xx");
-				paramvaltext.vexpand = true;
 				paramcontainer.append(paramsubrow);
 				paramcontainer.append(paramvalscroll);
 				paramsubrow.append(paramvalmaxi);
