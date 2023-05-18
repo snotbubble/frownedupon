@@ -3,16 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: brain surgery (changed my mind about not using pointers)
-//
-// incompatibilities with org, so far...
-// - no inline columnview (table from property drawers).
-// - [[val:var]] link type is supported here (in paragraphs only), but not in org.
-// - naming is independent of linking as it uses ids,
-//   frownedupon will link stuff by name (or reference to name) on load, 
-//   but after that you can link any output to any input, including property drawers,
-//   which may not work with org-entry-get in org.
-//   for now I'll assume the user knows this and will decide for themselves
+// status: table element indecision: columview or text...
 
 
 using GLib;
@@ -119,6 +110,7 @@ int			eidx;			// element list index of selected item (volatile)
 string[]		paneltypes;
 ModalBox[]		modeboxes;
 HeadingBox[]	headingboxes;
+int			rake;
 
 Gtk.Entry			saveentry;	// save file feeld
 Gtk.Paned			vdiv;		// needed for reflow, resize, etc.
@@ -134,6 +126,8 @@ Gtk.CssProvider	gutcsp;	// gutter css provider
 string				gutcss;	// gutter css string
 Gtk.CssProvider	srccsp;	// src bg css provider
 string				srccss;	// src bg css string
+Gtk.CssProvider	pancsp;	// panel bg css provider
+string				pancss;	// panel bg css string
 
 
 // default theme colors
@@ -908,6 +902,7 @@ void printheadings (int ind) {
 	}
 }
 
+
 // org parsing, super tedious but has to be accurate
 
 int findexample (int l, int ind, string n) {
@@ -1112,6 +1107,7 @@ int findtable (int l, int ind, string n) {
 			}
 			if (dospew) { print("[%d]%s\t\tfindtable counted %d rows\n",t,tabs,rc); }
 			if (rc > 0 && tln > 0) {
+				string org = "";
 				string[,] matx = new string[rc,cc];
 				int r = 0;
 				for(t = tln; t < (tln + rc); t++) {
@@ -1130,24 +1126,25 @@ int findtable (int l, int ind, string n) {
 							}
 							lsp += "";
 							
-							for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c].strip(); }
+							for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c]; }
 						} else {
 							if (dospew) { print("[%d]%s\t\tfindtable encountered a malformed table row: %s\n",t,tabs,dsp[0]); }
 							if (dospew) { print("[%d]%sfindtable aborted.\n",t,tabs); }
 							return t;
 						}
 					} else {
-						for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c].strip(); }
+						for (int c = 1; c < (lsp.length - 1); c++) { matx[r,(c - 1)] = lsp[c]; }
 					}
+					org = org.concat(ls,"\n");
 					r += 1;
 				}
 				string csv = "";
 				for (int i = 0; i < rc; i++) {
 					for (int q = 0; q < cc; q++) {
 						if (q == (cc - 1)) {
-							csv = csv.concat(matx[i,q]);
+							csv = csv.concat(matx[i,q].strip());
 						} else {
-							csv = csv.concat(matx[i,q],";");
+							csv = csv.concat(matx[i,q].strip(),";");
 						}
 					}
 					csv = csv.concat("\n");
@@ -1211,7 +1208,7 @@ int findtable (int l, int ind, string n) {
 					oo.name = makemeauniqueoutputname(tablename.concat("_spreadsheet"));
 					oo.id = makemeahash(oo.name,(tln+rc));
 					oo.type = "table";
-					oo.value = csv;
+					oo.value = org;
 					ee.params += oo;
 					if (themaths.length > 0) {
 						string fml = string.joinv("\n",themaths);
@@ -2617,6 +2614,15 @@ public class OutputRow : Gtk.Box {
 	}
 }
 
+public class SomeBullshit : Object {
+	string nothing;
+}
+public class LessBullshit : Object {
+	public string[] value;
+	public int row;
+	public int col;
+}
+
 public class ParamRow : Gtk.Box {
 	private Gtk.Entry paramvar;
 	private Gtk.Box paramcontainer;
@@ -2640,8 +2646,9 @@ public class ParamRow : Gtk.Box {
 	private GtkSource.Gutter paramvaltextgutter;
 	private bool edited;
 	//private Gtk.TreeIter paramtreeiter;
-	private GLib.ListStore paramtreestore;
+	private GLib.ListStore paramListstore;
 	private Gtk.ColumnView paramcolumnview;
+	private string[] tableheaders;
 	//private Gtk.TreeModelSort paramsortmodel;
 	public uint elementid;
 	public uint paramid;
@@ -2651,6 +2658,7 @@ public class ParamRow : Gtk.Box {
 		elementid = elements[e].id;
 		paramid = elements[e].params[idx].id;
 		edited = false;
+		rake = 0;
 		if (idx < elements[e].params.length) {
 			paramvar = new Gtk.Entry();
 			paramvar.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
@@ -2767,8 +2775,138 @@ public class ParamRow : Gtk.Box {
 					});
 				}
 				print("PARAMROW: made table ui.\n");
-				paramvalorgtable.vexpand = true;
-				paramvalscroll.set_child(paramvalorgtable);
+
+// fucked if I can get this working
+// ListStore seems to only take 1 column
+// ListFactory can bind to object properties, but not dynamically based on an index
+//
+				string[] rr = elements[e].params[idx].value.split("\n");
+				if (rr[0].has_prefix("|")) {
+					int ii = rr[0].index_of("|");
+					int oo = rr[0].last_index_of("|");
+					int rol = rr[0].length;
+					string headrow = rr[0];
+					if(oo > (ii + 1)) { headrow = rr[0].substring((ii+1),(oo - (ii + 1))); }
+					print("rr[0].substring(%d,%d) of %d = %s\n",(ii + 1),(oo - (ii + 1)),rol,rr[0]);
+					string[] hh = headrow.split("|");
+
+					string[] headers = {};
+					for (int h = 0; h < hh.length; h++) {
+						if(hh[h].strip() != "") { headers += hh[h].strip(); }
+					}
+					tableheaders = headers;
+					int num_rows = 0;
+					int num_columns = headers.length;
+					for (int r = 0; r < rr.length; r++) {
+						if (rr[r] != null && rr[r].strip() != "" && (rr[r].has_prefix("|--") == false)) {
+							num_rows += 1;
+						}
+					}
+					print("PARAMROW: row count: %d, column count: %d\n",num_rows,num_columns);
+					string[,] csv = new string[num_rows,num_columns];
+					int tr = 0;
+					for (int r = 0; r < rr.length; r++) {
+						print("PARAMROW: row %d: %s\n",r,rr[r]);
+						if (rr[r] != null && rr[r].strip() != "" && (rr[r].has_prefix("|--") == false) && rr[r].has_prefix("|") == true) {
+							ii = rr[r].index_of("|");
+							oo = rr[r].last_index_of("|");
+							if (oo > (ii + 1)) { rr[r] = rr[r].substring((ii+1),(oo - (ii + 1))); }
+							string[] cc = rr[r].split("|");
+							for (int c = 0; c < num_columns; c++) {
+								csv[tr,c] = cc[c].strip();
+								print("PARAMROW: collecting row %d col %d : %s\n",tr,c,csv[tr,c]);
+							}
+							tr += 1;
+						}
+					}
+
+					print("PARAMROW: making listStore...\n");
+					paramListstore = new GLib.ListStore(typeof(LessBullshit));
+					print("PARAMROW: setting up listStore...\n");
+					GLib.Value cval = new GLib.Value(typeof(string));
+
+// object per row, columns in array
+					for (int r = 0; r < num_rows; r++) {
+						var item = new LessBullshit();
+						string[] iv = {};
+						for (int c = 0; c < num_columns; c++) {
+							iv += csv[r,c];
+							item.row = r;
+						}
+						item.value = iv;
+						paramListstore.append(item);
+					}
+
+					Gtk.SingleSelection ssel = new Gtk.SingleSelection(paramListstore);
+					paramcolumnview = new Gtk.ColumnView(ssel);
+					foreach (string header in headers) {
+						Gtk.SignalListItemFactory lif = new Gtk.SignalListItemFactory();
+						lif.setup.connect((listitem) => {
+							//Gtk.Box rowbox = new Gtk.Box(VERTICAL,2);
+							//foreach (string theader in tableheaders) {
+							//	Gtk.Entry val = new Gtk.Entry();
+							//	rowbox.append(val);
+							//}
+							Gtk.Entry val = new Gtk.Entry();
+							val.margin_top = 0;
+							val.margin_start = 0;
+							val.margin_end = 0;
+							val.margin_bottom = 0;
+							val.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							val.get_style_context().add_class("xx");
+							listitem.set_child(val);
+							//Gtk.Widget huh = listitem.get_child();
+							print("making cell Entry widget\n");
+							//rake = 0;
+						});
+						lif.bind.connect((listitem) => {
+							//GLib.Value cv = new GLib.Value(typeof(string));
+							Gtk.Entry valentry = (Gtk.Entry) listitem.get_child();
+							var wut = valentry.parent;
+							wut.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							wut.get_style_context().add_class("xx");
+							wut.margin_top = 2;
+							wut.margin_start = 2;
+							wut.margin_end = 2;
+							wut.margin_bottom = 2;
+							wut = valentry.parent.parent;
+							wut.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+							wut.get_style_context().add_class("xx");
+							wut.margin_top = 0;
+							wut.margin_start = 0;
+							wut.margin_end = 0;
+							wut.margin_bottom = 0;
+							//SomeBullshit vdat = (SomeBullshit) listitem.get_item();
+							LessBullshit vdat = (LessBullshit) listitem.get_item();
+							int p = rake % tableheaders.length;
+							//print("listmodel column =  %d\n",vdat.col);
+							print("listmodel row =  %d\n",vdat.row);
+							//vdat.get_property(tableheaders[p],ref cv);
+							//valentry.text = cv.get_string();
+							valentry.text = vdat.value[p];
+							print("populating cell %u with %s\n",p,vdat.value[p]);
+							//for (int c = 1; c < tableheaders.length; c++) {
+							//	var item = valentry.get_next_sibling();
+							//	vdat.get_property(tableheaders[c],ref cval);
+							//	valentry.text = cval.get_string();
+							//}
+							rake += 1;
+						});
+						var column = new Gtk.ColumnViewColumn(header, lif);
+						paramcolumnview.append_column(column);
+						var heb = paramcolumnview.get_first_child();
+						heb.visible = false;
+						var seb = paramcolumnview.get_last_child();
+						seb.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+						seb.get_style_context().add_class("xx");
+					}
+					paramcolumnview.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+					paramcolumnview.get_style_context().add_class("xx");
+					paramvalscroll.set_child(paramcolumnview);
+					paramcolumnview.vexpand = true;
+					//paramvalorgtable.vexpand = true;
+					//paramvalscroll.set_child(paramvalorgtable);
+				}
 			}
 
 // editable multiline text params
@@ -2871,7 +3009,7 @@ public class ParamRow : Gtk.Box {
 				paramsubrow.margin_end = 4;
 				paramsubrow.margin_start = 4;
 				paramsubrow.margin_bottom = 0;
-				paramvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				paramvalscroll.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				paramvalscroll.get_style_context().add_class("xx");
 				paramcontainer.append(paramsubrow);
 				paramcontainer.append(paramvalscroll);
@@ -2909,11 +3047,13 @@ public class ParamRow : Gtk.Box {
 			if (elements[e].type != "paragraph" && elements[e].type != "table") {
 				print("add param overrides here\n");
 			}
+			paramcontainer.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			paramcontainer.get_style_context().add_class("xx");
 			//prmcsp = new Gtk.CssProvider();
 			//prmcss = ".xx { background: #00000000; }";
 			//prmcsp.load_from_data(prmcss.data);
-			//this.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
-			//this.get_style_context().add_class("xx");
+			this.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			this.get_style_context().add_class("xx");
 			this.margin_top = 0;
 			this.margin_start = 0;
 			this.margin_end = 0;
@@ -3948,7 +4088,7 @@ public class frownwin : Gtk.ApplicationWindow {
 		butcsp.load_from_data(butcss.data);
 
 		entcsp = new Gtk.CssProvider();
-		entcss = ".xx { border-radius: 0; border-top: 1px solid %s; border-left: 1px solid %s; border-right: 1px solid %s; border-bottom: 1px solid %s; background: %s; color: %s; }".printf(sblit,sblit,sbshd,sbshd,sbmrk,sbsel);
+		entcss = ".xx { border-radius: 0; border-top: 1px solid %s; border-left: 1px solid %s; border-right: 1px solid %s; border-bottom: 1px solid %s; background: %s; color: %s; }".printf(sbshd,sbshd,sblit,sblit,sbmrk,sbsel);
 		entcsp.load_from_data(entcss.data);
 
 		gutcsp = new Gtk.CssProvider();
@@ -3962,6 +4102,10 @@ public class frownwin : Gtk.ApplicationWindow {
 		srccsp = new Gtk.CssProvider();
 		srccss = ".xx { background: %s; }".printf(sbbkg);
 		srccsp.load_from_data(srccss.data);
+
+		pancsp = new Gtk.CssProvider();
+		pancss = ".xx { background: %s; padding: 0px; }".printf(sbmrk);
+		pancsp.load_from_data(pancss.data);
 
 // interaction states
 
