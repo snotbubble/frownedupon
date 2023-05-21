@@ -3,11 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: input-linkage-on-load vs unique-output-name-on-load ...
-//         orgmode doesn't care about dupes & grabs the 1st match - by various means
-//         will try to emulate org behavior here when loading the orgfile, then fix duplicate names
-//         frownedupon linkage is by id, so renaming shouldn't break anything
-//         will keep forced unique output names on create/edit to prevent incorrect linkage back in orgmode
+// status: eval output...
 
 
 using GLib;
@@ -114,6 +110,7 @@ int			eidx;			// element list index of selected item (volatile)
 string[]		paneltypes;
 ModalBox[]		modeboxes;
 HeadingBox[]	headingboxes;
+string[,]		tbldat;
 
 Gtk.Entry			saveentry;	// save file feeld
 Gtk.Paned			vdiv;		// needed for reflow, resize, etc.
@@ -1260,6 +1257,16 @@ int findtable (int l, int ind, string n) {
 					for (f = t; f < (t + 10); f++) {
 						if (lines[t].strip().has_prefix("#+END_TABLE")){ t = (f + 1); break; }
 					}
+// add a placeholder output for the table data - this is to display evaluated org-tables as raw csv data, after formulae, sans hlines
+					output o = output();
+					o.name = ee.name.concat("_output");
+					o.value = "";
+					o.id = makemeahash(o.name,t);
+					o.ebuff = ee.id; 
+					outputs += o;
+					ee.outputs += &outputs[(outputs.length - 1)];
+					ee.obuff += o.id;
+// add element to elements
 					typecount[4] += 1;
 					ee.owner = &headings[hidx];
 					ee.hbuff = headings[hidx].id;
@@ -1991,38 +1998,217 @@ string writefiletopath (int ind, string p, string n, string e, string s) {
 	return "";
 }
 
+void orgtabletodat (string org) {
+	string[] rr = org.split("\n");
+	if (rr[0].has_prefix("|")) {
+		int ii = rr[0].index_of("|");
+		int oo = rr[0].last_index_of("|");
+		int rol = rr[0].length;
+		string headrow = rr[0];
+		if(oo > (ii + 1)) { headrow = rr[0].substring((ii+1),(oo - (ii + 1))); }
+		string[] hh = headrow.split("|");
+		string[] headers = {};
+		for (int h = 0; h < hh.length; h++) {
+			if(hh[h].strip() != "") { headers += hh[h].strip(); }
+		}
+		int num_rows = 0;
+		int num_columns = headers.length;
+		for (int r = 0; r < rr.length; r++) {
+			if (rr[r] != null && rr[r].strip() != "" && rr[r].has_prefix("|") == true) {
+				num_rows += 1;
+			}
+		}
+		tbldat = new string[num_rows,num_columns];
+		int tr = 0;
+		for (int r = 0; r < rr.length; r++) {
+			if (rr[r] != null && rr[r].strip() != "" && rr[r].has_prefix("|") == true) {
+				ii = rr[r].index_of("|");
+				oo = rr[r].last_index_of("|");
+				if (oo > (ii + 1)) { rr[r] = rr[r].substring((ii+1),(oo - (ii + 1))); }
+				string[] cc = rr[r].split("|");
+				if (cc.length == 1 && cc[0].contains("-+-")) {
+					cc = rr[r].split("+");
+				}
+				for (int c = 0; c < num_columns; c++) {
+					tbldat[tr,c] = cc[c].strip();
+				}
+				tr += 1;
+			}
+		}
+	}
+}
+string reorgtable () {
+	int[] maxlen = new int[tbldat.length[1]];
+	string o = "";
+	string hln = "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------";
+	for (int m = 0; m < maxlen.length; m++) { maxlen[m] = 0; }
+	for (int r = 0; r < tbldat.length[0]; r++) {
+		for (int c = 0; c < tbldat.length[1]; c++) {
+			string lc = tbldat[r,c].replace("-","");
+			if (lc.strip().length == 0) { continue; }
+			maxlen[c] = int.max(maxlen[c],tbldat[r,c].length);
+		}
+	}
+	for (int r = 0; r < tbldat.length[0]; r++) {
+		bool ishline = false;
+		string hc = tbldat[r,0].replace("-","").strip();
+		if (hc.length == 0) {
+			for (int c = 1; c < tbldat.length[1]; c++) {
+				hc = hc.concat(tbldat[r,c]);
+			}
+			hc = hc.replace("-","").strip();
+			if (hc.length == 0) { ishline = true; }
+		}
+		if (ishline) {
+			o = o.concat("|");
+			for (int c = 0; c < (tbldat.length[1] - 1); c++) {
+				//print("%.*s%s\n",5,s,"heading");
+				o = "%s-%.*s%s+".printf(o,maxlen[c],hln,"-");
+			}
+			o = "%s-%.*s%s|\n".printf(o,maxlen[(tbldat.length[1] - 1)],hln,"-");
+		} else {
+			o = o.concat("| ");
+			for (int c = 0; c < tbldat.length[1]; c++) {
+				o = "%s%-*s | ".printf(o,maxlen[c],tbldat[r,c]);
+			}
+			o._chomp();
+			o = o.concat("\n");
+		}
+	}
+	return o;
+}
+int getrefindex (string r) {
+	int o = 0;
+	if (r != null && r.strip() != "") {
+		switch (r.get_char(0)) {
+			case '>': o = (tbldat.length[0] - (r.split(">").length - 1)); break;
+			case '<': o = r.split("<").length; break;
+			case 'I': 
+				int qq = 0; 
+				int x = r.split("I").length - 1;
+				for (int i = 0; i < tbldat.length[0]; i++) { 
+					if (tbldat[i,0].has_prefix("--")) { 
+						qq += 1; 
+						if (qq == x) { o = i + 1; break; }
+					}
+				} break;
+			default: o = int.parse(r) - 1; break;
+		}
+	}
+	return o;
+}
+double doplusminus (string inner) {
+	double sm = 0.0;
+	if (inner != null && inner.strip() != "") {
+		string s = inner;
+		if (s.contains("+")) {
+			string[] sp = s.split("+");
+			if (sp.length == 2) {
+				double aa = double.parse(sp[0].strip());
+				double bb = double.parse(sp[1].strip());
+				sm = aa + bb;
+			}
+		} else {
+			string[] sp = s.split("-");
+			if (sp.length == 2) {
+				double aa = double.parse(sp[0].strip());
+				double bb = double.parse(sp[1].strip());
+				sm = aa - bb;
+			}
+		}
+	}
+	return sm;
+}
+double domultdiv (string inner) {
+	double sm = 0.0;
+	if (inner != null && inner.strip() != "") {
+		string s = inner;
+		if (s.contains("*")) {
+			string[] sp = s.split("*");
+			if (sp.length == 2) {
+				double aa = double.parse(sp[0].strip());
+				double bb = double.parse(sp[1].strip());
+				sm = aa * bb;
+			}
+		} else {
+			string[] sp = s.split("/");
+			if (sp.length == 2) {
+				double aa = double.parse(sp[0].strip());
+				double bb = double.parse(sp[1].strip());
+				sm = aa / bb;
+			}
+		}
+	}
+	return sm;
+}
+double doformat (string n) {
+	if (n != null && n != "") {
+		string[] np = n.split(";");
+		if (np.length == 2) {
+			if (np[0] != "" && np[1] != "") {
+				//print("np[0] = %s\n",np[0]);
+				//print("np[1] = %s\n",np[1]);
+				string h = np[1].printf(double.parse(np[0]));
+				//print("h = %s\n",h);
+				return double.parse(h);
+			}
+		}
+	}
+	return 0.0;
+}
+double dosum (string inner) {
+	double sm = 0.0;
+	if (inner != null && inner.strip() != "") {
+		int ii = 0;
+		int oo = 0;
+		int cf = 0;
+		int ct = 0;
+		int rf = 0;
+		int rt = 0;
+		string s = inner;
+		ii = s.index_of("@");
+		oo = s.index_of("$");
+		string r = s.substring((ii+1),(oo - (ii + 1)));
+		rf = getrefindex(r);
+		s = s.splice((ii),(oo),"");
+
+		ii = s.index_of("$");
+		oo = s.index_of("..");
+		string c = s.substring((ii+1),(oo - (ii + 1)));
+		cf = getrefindex(c);
+		s = s.splice((ii),(oo),"");
+
+		ii = s.index_of("@");
+		oo = s.index_of("$");
+		string rr = s.substring((ii+1),(oo - (ii + 1)));
+		rt = getrefindex(rr);
+		s = s.splice((ii),(oo),"");
+
+		ii = s.index_of("$");
+		oo = s.index_of(")");
+		string cc = s.substring((ii+1),(oo - (ii + 1)));
+		ct = getrefindex(cc);
+
+		if (rf == rt) {
+			for (int i = cf; i <= ct; i++) { 
+				double dd = double.parse(tbldat[rf,i]);
+				if ( dd > 0.0) { sm += dd; }
+			}
+			print("\t\thsum = %f\n",sm);
+		}
+		if (cf == ct) {
+			for (int i = rf; i <= rt; i++) { 
+				double dd = double.parse(tbldat[i,cf]);
+				if ( dd > 0.0) { sm += dd; }
+			}
+			print("\t\tvsum = %f\n",sm);
+		}
+	}
+	return sm;
+}
 bool eval(int ind, int[] e) {
 	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
 	print("%sEVAL: started...\n",tabs);
-// string[] lines; 
-// void main(string[] args) { 
-//     var dd = GLib.Environment.get_current_dir();
-//     if (args.length >= 1) { 
-//         var argf = File.new_for_path (dd.concat(args[1]));
-//         if (argf.query_exists()) {
-//             GLib.FileStream fstr = null;
-//             fstr = FileStream.open(argf, "r");
-//             string l = fstr.read_line();
-//             while (l != null) { lines += l; l = fstr.read_line(); }
-//         }  
-//     }
-//     if (lines.length > 0) {
-// ...
-//
-// for each element in e
-//     for each input in element
-//         does input have an output file?
-//             error and quit if not    
-//             make output file path and input name as an arg-par if true
-//      get my language
-//      get my flags
-//      get my code
-//      inject var = arg into code
-//      save code to file
-//      build command string
-//      run command string, save output to result textbuffer
-//      save result to output file
-// delete all temp files
 
 	string[] cleanup = {};
 	for (int q = 0; q < e.length; q++) {
@@ -2036,7 +2222,8 @@ bool eval(int ind, int[] e) {
 		string[] arglist = {};
 		string[] argsrc = {};
 
-		int srcindex = -1;
+		int srcindex = -1;		// sourceblock code, or table orgtable
+		int frmindex = -1;		// table formula - special case eval
 		string[] cmd = {};
 		string varc = "";
 		string ext = "";
@@ -2061,7 +2248,7 @@ bool eval(int ind, int[] e) {
 			}
 		} else { print("%s\tEVAL: %s is first\n",tabs,elements[e[q]].name); }
 
-// get language, flags and source
+// get index of: language, flags, formula, source, table
 		for (int p = 0; p < elements[e[q]].params.length; p++) {
 			if (elements[e[q]].params[p].name == "language") {
 				language = elements[e[q]].params[p].value;
@@ -2075,9 +2262,11 @@ bool eval(int ind, int[] e) {
 				evalflags += elements[e[q]].params[p].value;
 				flagc += 1;
 			}
-			if (elements[e[q]].params[p].type == "source" || elements[e[q]].params[p].type == "formula") {
+			if (elements[e[q]].params[p].type == "source" || elements[e[q]].params[p].type == "table") {
 				srcindex = p;
-				print("%s\tEVAL: source param index is %d\n",tabs,srcindex);
+			}
+			if (elements[e[q]].params[p].type == "formula") {
+				frmindex = p;
 			}
 		}
 
@@ -2097,8 +2286,7 @@ bool eval(int ind, int[] e) {
 				}
 			}
 		}
-
-		if (srcindex >= 0) {
+		if (elements[e[q]].type == "srcblock" && srcindex >= 0) {
 
 // set language file extension
 			switch (language.down()) {
@@ -2185,23 +2373,90 @@ bool eval(int ind, int[] e) {
 				for (int a = 0; a < argspart.length; a++) {
 					cmd += argspart[a];
 				}
-				//print("%s\t\tEVAL: cmd = %s\n",tabs,cmd);
+				foreach (string g in cmd) { print("%s ",g); }
+				print("\n");
+				string sov = "";
 				try {
-					string o;
-					Pid prc;
-					GLib.Process.spawn_sync (null,cmd,null,SpawnFlags.SEARCH_PATH,null,out o,null,out prc);
-					print("%s\t\tEVAL: process %d started...\n",tabs,prc);
-					if (elements[e[q]].type == "srcblock") {
-						string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",o);
-						cleanup += wr;
-						elements[e[q]].outputs[0].value = o;
-						print("%s\t\t\tEVAL: process complete.\n",tabs);
-					} else {
-						print("paragraph eval goes here\n");
-					}
+					//Pid prc;
+//					spawn_sync (dir, argv, env, flags, setup, out output, out error, out status)
+//                               1     2    3     4     5         6           7          8
+					print("%s\t\tEVAL: process started...\n",tabs);
+					GLib.Process.spawn_sync (null,cmd,null,SpawnFlags.SEARCH_PATH,null,out sov,null, null);
+					print("%s\t\t\tEVAL: process complete.\n",tabs);
 				} catch (SpawnError e) { print ("Error: %s\n", e.message); }
+				if (sov != "") {
+					print("%s\t\tEVAL: process returned: %s\n",tabs,sov);
+					string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",sov);
+					cleanup += wr;
+					elements[e[q]].outputs[0].value = sov;
+				}
 			}
 		}
+		if (elements[e[q]].type == "table" && srcindex >= 0) {
+			if (elements[e[q]].params[srcindex].value != null && elements[e[q]].params[srcindex].value.strip() != "") {
+				orgtabletodat(elements[e[q]].params[srcindex].value);
+				if (elements[e[q]].params[frmindex].value != null && elements[e[q]].params[frmindex].value != "") {
+					string xpr = elements[e[q]].params[frmindex].value;
+					int oo = xpr.index_of(")");
+					int ii = xpr.last_index_of("(");
+					int sks = 0;
+					bool wassum = false;
+					while ( oo >= 0 ) {
+						if (sks > 10) { break; }
+						string inner = xpr.substring(ii,(oo - (ii - 1)));
+						if (wassum) { inner = inner.replace("vsum",""); inner = inner.replace("hsum",""); }
+						print("\tinner expression is: %s\n",inner);
+						if (inner.contains("..")) {
+							double sm = dosum(inner);
+							inner = "%f".printf(sm);
+							wassum = true;
+						} else { wassum = false; }
+						if (inner.contains("+") || inner.contains("-")) {
+							inner = inner.replace("(",""); inner = inner.replace(")","");
+							double pm = doplusminus(inner);
+							inner = "%f".printf(pm);
+						}
+						if (inner.contains("*") || inner.contains("/")) {
+							inner = inner.replace("(",""); inner = inner.replace(")","");
+							double md = domultdiv(inner);
+							inner = "%f".printf(md);
+						}
+						xpr = xpr.splice(ii,(oo + 1),inner);
+						print("\t\tspliced expression: %s\n",xpr);
+						oo = xpr.index_of(")");
+						ii = xpr.last_index_of("(");
+						sks += 1;
+					}
+					string[] ep = xpr.split("=");
+					if (ep.length == 2) {
+						ep[0] = ep[0].strip();
+						ep[1] = ep[1].strip();
+							if (ep[0] != "") {
+							ii = ep[0].index_of("@");
+							oo = ep[0].index_of("$");
+							string rs = ep[0].substring((ii+1),(oo - (ii + 1)));
+							int r = getrefindex(rs);
+							string cs = ep[0].substring((oo + 1),1);
+							int c = getrefindex(cs);
+							//print("row = %d, col = %d\n",r,c);
+							double fm = 0.0;
+							if (ep[1] != "") {
+								if (ep[1].contains(";")) {
+									fm = doformat(ep[1]);
+								} else {
+									fm = double.parse(ep[1]);
+								}
+								tbldat[r,c] = "%f".printf(fm);
+							}
+						}
+					}
+				}
+				elements[e[q]].outputs[0].value = reorgtable();
+				string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",elements[e[q]].outputs[0].value);
+				cleanup += wr;
+			}
+		}
+		if (elements[e[q]].type == "paragraph") { }
 	}
 	print("rm ");
 	for (int k = 0; k < cleanup.length; k++) {
@@ -2460,7 +2715,7 @@ public class OutputRow : Gtk.Box {
 			});
 
 // editable multiline text outputs
-			if (elements[e].type == "paragraph" || elements[e].type == "example" || elements[e].type == "srcblock") {
+			if (elements[e].type == "paragraph" || elements[e].type == "example" || elements[e].type == "srcblock" || elements[e].type == "table") {
 				print("OUTPUTROW: adding gtksourceview field for %s\n",elements[e].type);
 				outputsubrow = new Gtk.Box(HORIZONTAL,4);
 				outputsubrow.append(outputvar);
@@ -2618,19 +2873,11 @@ public class OutputRow : Gtk.Box {
 				outputcontainer.margin_end = 4;
 				outputcontainer.margin_bottom = 4;
 			}
-
-// some elements can't edit outputs here
-			if (elements[e].type != "paragraph" && elements[e].type != "table") {
-				print("add output overrides here\n");
-			}
-			oupcsp = new Gtk.CssProvider();
-			oupcss = ".xx { background: #00000000; }";
-			oupcsp.load_from_data(oupcss.data);
-			outputvalscroll.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			outputvalscroll.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			outputvalscroll.get_style_context().add_class("xx");
-			outputcontainer.get_style_context().add_provider(srccsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			outputcontainer.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			outputcontainer.get_style_context().add_class("xx");
-			this.get_style_context().add_provider(oupcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+			this.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 			this.get_style_context().add_class("xx");
 			this.margin_top = 0;
 			this.margin_start = 0;
@@ -2855,10 +3102,6 @@ public class ParamRow : Gtk.Box {
 				//print("PARAMROW: made table ui.\n");
 
 // hacked-together columnview
-// I can't decipher the new 1-column-listmodel vs columnviewcolumn vs listitemfactory vs binding-expression fuckery
-// the documentation lacks practical examples and can't find 3rd-party examples - which tend to be too labyrinthine to be useful refernce in any case.
-// so here I'm just filling boxes with entry widgets, inside a scrolledwindow
-// keeping a text org-table as a fallback
 
 				string[] rr = elements[e].params[idx].value.split("\n");
 				if (rr[0].has_prefix("|")) {
@@ -3006,7 +3249,8 @@ public class ParamRow : Gtk.Box {
 						int ee = getelementindexbyid(elementid);
 						int pp = getparamindexbyid(ee,paramid);
 						if (ee >= 0) {
-							if (elements[ee].params.length > idx) {
+							if (elements[ee].params.length > pp) {
+								//print("%s.%s.value = %s\n",elements[ee].name,elements[ee].params[pp].name,paramvaltext.buffer.text);
 								elements[ee].params[pp].value = paramvaltext.buffer.text;
 								edited = true;
 							}
@@ -3015,7 +3259,7 @@ public class ParamRow : Gtk.Box {
 				});
 
 // add eval button to src
-				if (elements[e].type == "srcblock" || elements[e].type == "formula" ) {
+				if (elements[e].type == "srcblock" || elements[e].params[idx].type == "formula" ) {
 					print("PARAMROW:\tadding paragraph eval button...\n");
 					parameval = new Gtk.Button();
 					parameval.icon_name = "media-playback-start";
@@ -3034,13 +3278,19 @@ public class ParamRow : Gtk.Box {
 									deps += elements[ee].inputs[i].index;
 								}
 							}
-							if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
 							int[] q = {};
-							if (deps.length > 0) { q = evalpath(deps,ee); }
-							q += elements[ee].index;
-							if(eval(4,q)) {
-								ElementBox elmo = (ElementBox) this.parent.parent.parent.parent;
-								elmo.updatemyoutputs();
+							if (deps.length > 0) { 
+								if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
+								q = evalpath(deps,ee); 
+							}
+							if (elements[ee].type == "srcblock") { q += elements[ee].index; }
+							if(eval(1,q)) {
+								Gtk.Box pbo = (Gtk.Box) this.parent.parent.parent.parent.parent;
+								ElementBox elmo = (ElementBox) pbo.get_first_child();
+								while (elmo != null) {
+									elmo.updatemyoutputs();
+									elmo = (ElementBox) elmo.get_next_sibling();
+								}
 							}
 							doup = true;
 						}
@@ -3245,6 +3495,7 @@ public class ElementBox : Gtk.Box {
 	private int doy;
 	public void updatemyoutputs() {
 		int ee = getelementindexbyid(elementid);
+		if (spew) { print("ELEMENTBOX: updating element %s ui outputs...\n",elements[ee].name); }
 		if (elements[ee].outputs.length > 0) {
 			if (elements[ee].outputs[0].value != null) {
 				OutputRow elmo = (OutputRow) elmoutputlistbox.get_first_child();
@@ -4144,7 +4395,7 @@ public class frownwin : Gtk.ApplicationWindow {
 		entcsp.load_from_data(entcss.data);
 
 		gutcsp = new Gtk.CssProvider();
-		gutcss = ".xx { border-radius: 0; background: %s; }".printf(sbbkg);
+		gutcss = ".xx { border-radius: 0; background: %s; }".printf(sbmrk);
 		gutcsp.load_from_data(gutcss.data);
 
 		lblcsp = new Gtk.CssProvider();
