@@ -3,7 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: eval output...
+// status: sync table element org, dat[,], csv & gtk-cells...
 
 
 using GLib;
@@ -110,7 +110,6 @@ int			eidx;			// element list index of selected item (volatile)
 string[]		paneltypes;
 ModalBox[]		modeboxes;
 HeadingBox[]	headingboxes;
-string[,]		tbldat;
 
 Gtk.Entry			saveentry;	// save file feeld
 Gtk.Paned			vdiv;		// needed for reflow, resize, etc.
@@ -1998,7 +1997,8 @@ string writefiletopath (int ind, string p, string n, string e, string s) {
 	return "";
 }
 
-void orgtabletodat (string org) {
+string[,] orgtabletodat (string org) {
+	string[,] tbldat = {{""}};
 	string[] rr = org.split("\n");
 	if (rr[0].has_prefix("|")) {
 		int ii = rr[0].index_of("|");
@@ -2036,8 +2036,9 @@ void orgtabletodat (string org) {
 			}
 		}
 	}
+	return tbldat;
 }
-string reorgtable () {
+string reorgtable (string[,] tbldat) {
 	int[] maxlen = new int[tbldat.length[1]];
 	string o = "";
 	string hln = "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------";
@@ -2077,7 +2078,7 @@ string reorgtable () {
 	}
 	return o;
 }
-int getrefindex (string r) {
+int getrefindex (string r, string[,] tbldat) {
 	int o = 0;
 	if (r != null && r.strip() != "") {
 		switch (r.get_char(0)) {
@@ -2146,17 +2147,14 @@ double doformat (string n) {
 		string[] np = n.split(";");
 		if (np.length == 2) {
 			if (np[0] != "" && np[1] != "") {
-				//print("np[0] = %s\n",np[0]);
-				//print("np[1] = %s\n",np[1]);
 				string h = np[1].printf(double.parse(np[0]));
-				//print("h = %s\n",h);
 				return double.parse(h);
 			}
 		}
 	}
 	return 0.0;
 }
-double dosum (string inner) {
+double dosum (string inner, string[,] tbldat) {
 	double sm = 0.0;
 	if (inner != null && inner.strip() != "") {
 		int ii = 0;
@@ -2169,25 +2167,25 @@ double dosum (string inner) {
 		ii = s.index_of("@");
 		oo = s.index_of("$");
 		string r = s.substring((ii+1),(oo - (ii + 1)));
-		rf = getrefindex(r);
+		rf = getrefindex(r, tbldat);
 		s = s.splice((ii),(oo),"");
 
 		ii = s.index_of("$");
 		oo = s.index_of("..");
 		string c = s.substring((ii+1),(oo - (ii + 1)));
-		cf = getrefindex(c);
+		cf = getrefindex(c, tbldat);
 		s = s.splice((ii),(oo),"");
 
 		ii = s.index_of("@");
 		oo = s.index_of("$");
 		string rr = s.substring((ii+1),(oo - (ii + 1)));
-		rt = getrefindex(rr);
+		rt = getrefindex(rr, tbldat);
 		s = s.splice((ii),(oo),"");
 
 		ii = s.index_of("$");
 		oo = s.index_of(")");
 		string cc = s.substring((ii+1),(oo - (ii + 1)));
-		ct = getrefindex(cc);
+		ct = getrefindex(cc, tbldat);
 
 		if (rf == rt) {
 			for (int i = cf; i <= ct; i++) { 
@@ -2213,7 +2211,7 @@ bool eval(int ind, int[] e) {
 	string[] cleanup = {};
 	for (int q = 0; q < e.length; q++) {
 		print("%sEVAL: checking element %s\n",tabs, elements[e[q]].name);
-		string elementname = ""; 
+		string elementname = "";
 		string srcblockname = "";
 		string resultname = "";
 		string language = "";
@@ -2221,10 +2219,12 @@ bool eval(int ind, int[] e) {
 		string previousresult = "";
 		string[] arglist = {};
 		string[] argsrc = {};
+		bool script = true;
 
 		int srcindex = -1;		// sourceblock code, or table orgtable
 		int frmindex = -1;		// table formula - special case eval
 		string[] cmd = {};
+		string[] bcmd = {};
 		string varc = "";
 		string ext = "";
 		int flagc = 0;
@@ -2330,6 +2330,7 @@ bool eval(int ind, int[] e) {
 			varc = "";
 			string fsrc = elements[e[q]].params[srcindex].value;
 			if (language == "./r3") {
+				script = true;
 				for (int v = 0; v < arglist.length; v++) {
 					argspart += arglist[v];
 					varc = "%s\n%s: read/string to-file system/script/args/%d".printf(varc,argsrc[v],(flagc + v + 1));
@@ -2345,6 +2346,7 @@ bool eval(int ind, int[] e) {
 				print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
 			}
 			if (language == "valac") {
+				script = false;
 				for (int v = 0; v < arglist.length; v++) {
 					argspart += arglist[v];
 					varc = "%s\nstring %s = args[%d];".printf(varc,argsrc[v],(flagc + v + 1));
@@ -2354,6 +2356,7 @@ bool eval(int ind, int[] e) {
 				print("%s\t\tEVAL: src =\n%s\n",tabs,fsrc);
 			}
 			if (language == "sh") {
+				script = true;
 				for (int v = 0; v < arglist.length; v++) {
 					argspart += arglist[v];
 					varc = "%s\n%s=$(cat \"$%d\");".printf(varc,argsrc[v],(flagc + v + 1));
@@ -2367,23 +2370,40 @@ bool eval(int ind, int[] e) {
 			cleanup += w;
 			if (w != "") {
 				cmd = {language,w,};
+				bcmd += "./%s".printf(elements[e[q]].params[srcindex].name);
 				for (int f = 0; f < evalflags.length; f++) {
 					cmd += evalflags[f];
 				}
-				for (int a = 0; a < argspart.length; a++) {
-					cmd += argspart[a];
+				if (script) {
+					for (int a = 0; a < argspart.length; a++) {
+						cmd += argspart[a];
+					}
+				} else {
+					for (int a = 0; a < argspart.length; a++) {
+						bcmd += argspart[a];
+					}
 				}
-				foreach (string g in cmd) { print("%s ",g); }
-				print("\n");
+				foreach (string g in cmd) { print("%s ",g); } print("\n");
+				foreach (string g in bcmd) { print("%s ",g); } print("\n");
 				string sov = "";
 				try {
 					//Pid prc;
-//					spawn_sync (dir, argv, env, flags, setup, out output, out error, out status)
+//                  spawn_sync (dir, argv, env, flags, setup, out output, out error, out status)
 //                               1     2    3     4     5         6           7          8
 					print("%s\t\tEVAL: process started...\n",tabs);
 					GLib.Process.spawn_sync (null,cmd,null,SpawnFlags.SEARCH_PATH,null,out sov,null, null);
 					print("%s\t\t\tEVAL: process complete.\n",tabs);
 				} catch (SpawnError e) { print ("Error: %s\n", e.message); }
+				if (script == false) {
+					try {
+						//Pid prc;
+	//                  spawn_sync (dir, argv, env, flags, setup, out output, out error, out status)
+	//                               1     2    3     4     5         6           7          8
+						print("%s\t\tEVAL: compiled process started...\n",tabs);
+						GLib.Process.spawn_sync (null,bcmd,null,SpawnFlags.SEARCH_PATH,null,out sov,null, null);
+						print("%s\t\t\tEVAL: compiled process complete.\n",tabs);
+					} catch (SpawnError e) { print ("Error: %s\n", e.message); }
+				}
 				if (sov != "") {
 					print("%s\t\tEVAL: process returned: %s\n",tabs,sov);
 					string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",sov);
@@ -2393,9 +2413,12 @@ bool eval(int ind, int[] e) {
 			}
 		}
 		if (elements[e[q]].type == "table" && srcindex >= 0) {
+			print("%s\tEVAL:table element: %s\n",tabs,elements[e[q]].name);
 			if (elements[e[q]].params[srcindex].value != null && elements[e[q]].params[srcindex].value.strip() != "") {
-				orgtabletodat(elements[e[q]].params[srcindex].value);
+				print("%s\tEVAL:table source parameter: %s\n",tabs,elements[e[q]].params[srcindex].name);
+				string[,] tbldat = orgtabletodat(elements[e[q]].params[srcindex].value);
 				if (elements[e[q]].params[frmindex].value != null && elements[e[q]].params[frmindex].value != "") {
+					print("%s\tEVAL:table formulae parameter: %s\n",tabs,elements[e[q]].params[frmindex].name);
 					string xpr = elements[e[q]].params[frmindex].value;
 					int oo = xpr.index_of(")");
 					int ii = xpr.last_index_of("(");
@@ -2407,7 +2430,7 @@ bool eval(int ind, int[] e) {
 						if (wassum) { inner = inner.replace("vsum",""); inner = inner.replace("hsum",""); }
 						print("\tinner expression is: %s\n",inner);
 						if (inner.contains("..")) {
-							double sm = dosum(inner);
+							double sm = dosum(inner,tbldat);
 							inner = "%f".printf(sm);
 							wassum = true;
 						} else { wassum = false; }
@@ -2435,10 +2458,9 @@ bool eval(int ind, int[] e) {
 							ii = ep[0].index_of("@");
 							oo = ep[0].index_of("$");
 							string rs = ep[0].substring((ii+1),(oo - (ii + 1)));
-							int r = getrefindex(rs);
+							int r = getrefindex(rs,tbldat);
 							string cs = ep[0].substring((oo + 1),1);
-							int c = getrefindex(cs);
-							//print("row = %d, col = %d\n",r,c);
+							int c = getrefindex(cs,tbldat);
 							double fm = 0.0;
 							if (ep[1] != "") {
 								if (ep[1].contains(";")) {
@@ -2451,7 +2473,7 @@ bool eval(int ind, int[] e) {
 						}
 					}
 				}
-				elements[e[q]].outputs[0].value = reorgtable();
+				elements[e[q]].outputs[0].value = reorgtable(tbldat);
 				string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",elements[e[q]].outputs[0].value);
 				cleanup += wr;
 			}
@@ -2929,54 +2951,14 @@ public class ParamRow : Gtk.Box {
 	private GtkSource.Gutter paramvaltextgutter;
 	private bool edited;
 	private Gtk.Box paramcolumnview;
+	private Gtk.Stack tablestack;
+	private Gtk.StackSwitcher tableswish;
+	private Gtk.Box tableswishbox;
 	//private string[] tableheaders;
 	private string[,] csv;
 	public uint elementid;
 	public uint paramid;
 	public string language;
-	//private int rake;
-	private string reorgtable () {
-		int[] maxlen = new int[csv.length[1]];
-		string o = "";
-		string hln = "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------";
-		for (int m = 0; m < maxlen.length; m++) { maxlen[m] = 0; }
-		for (int r = 0; r < csv.length[0]; r++) {
-			for (int c = 0; c < csv.length[1]; c++) {
-				string lc = csv[r,c].replace("-","");
-				if (lc.strip().length == 0) { continue; }
-				maxlen[c] = int.max(maxlen[c],csv[r,c].length);
-			}
-		}
-		for (int r = 0; r < csv.length[0]; r++) {
-			bool ishline = false;
-			string hc = csv[r,0].replace("-","").strip();
-			if (hc.length == 0) {
-				for (int c = 1; c < csv.length[1]; c++) {
-					hc = hc.concat(csv[r,c]);
-				}
-				hc = hc.replace("-","").strip();
-				if (hc.length == 0) { ishline = true; }
-			}
-			if (ishline) {
-				o = o.concat("|");
-				for (int c = 0; c < (csv.length[1] - 1); c++) {
-					//print("%.*s%s\n",5,s,"heading");
-					o = "%s-%.*s%s+".printf(o,maxlen[c],hln,"-");
-				}
-				o = "%s-%.*s%s|\n".printf(o,maxlen[(csv.length[1] - 1)],hln,"-");
-			} else {
-				o = o.concat("| ");
-				for (int c = 0; c < csv.length[1]; c++) {
-					o = "%s%-*s | ".printf(o,maxlen[c],csv[r,c]);
-				}
-				o._chomp();
-				o = o.concat("\n");
-			}
-		}
-		print("org table:\n%s\n",o);
-		return o;
-	}
-	// push cell edits back into the data (tablecsv)
 	public ParamRow (int e, int idx) {
 		print("PARAMROW: started (element %d, param %d) %s, %s = %s\n",e,idx,elements[e].name, elements[e].params[idx].name, elements[e].params[idx].value);
 		elementid = elements[e].id;
@@ -3051,7 +3033,18 @@ public class ParamRow : Gtk.Box {
 				//if (rowcount != csvrows.length) { print("PARAMROW: rowcount %d != csvrows.length %d\n",rowcount,csvrows.length); }
 				string[] csvcols = csvrows[0].split(";");
 				string[] hedcols = csvcols;
-					if (rowcount > 0) {
+				Gtk.Box gtktablescrollbox = new Gtk.Box(VERTICAL,10);
+				Gtk.ScrolledWindow gtktablescroll = new Gtk.ScrolledWindow();
+				Gtk.Box orgtablescrollbox = new Gtk.Box(VERTICAL,10);
+				Gtk.ScrolledWindow orgtablescroll = new Gtk.ScrolledWindow();
+				orgtablescroll.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				orgtablescroll.get_style_context().add_class("xx");
+				gtktablescroll.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				gtktablescroll.get_style_context().add_class("xx");
+				tablestack = new Gtk.Stack();
+				tableswish = new Gtk.StackSwitcher();
+				tableswishbox = new Gtk.Box(VERTICAL,0);
+				if (rowcount > 0) {
 					print("PARAMROW: adding gtksourceview field for %s\n",elements[e].type);
 					paramsubrow = new Gtk.Box(HORIZONTAL,4);
 					paramsubrow.append(paramvar);
@@ -3098,56 +3091,15 @@ public class ParamRow : Gtk.Box {
 					paramvalorgtable.preedit_changed.connect((s) => {
 						print("preedit = %s\n",s);
 					});
+					orgtablescrollbox.append(paramvalorgtable);
+					orgtablescroll.set_child(orgtablescrollbox);
 				}
 				//print("PARAMROW: made table ui.\n");
 
 // hacked-together columnview
 
-				string[] rr = elements[e].params[idx].value.split("\n");
-				if (rr[0].has_prefix("|")) {
-					int ii = rr[0].index_of("|");
-					int oo = rr[0].last_index_of("|");
-					int rol = rr[0].length;
-					string headrow = rr[0];
-					if(oo > (ii + 1)) { headrow = rr[0].substring((ii+1),(oo - (ii + 1))); }
-					//print("rr[0].substring(%d,%d) of %d = %s\n",(ii + 1),(oo - (ii + 1)),rol,rr[0]);
-					string[] hh = headrow.split("|");
-
-					string[] headers = {};
-					for (int h = 0; h < hh.length; h++) {
-						if(hh[h].strip() != "") { headers += hh[h].strip(); }
-					}
-					//tableheaders = headers;
-					int num_rows = 0;
-					int num_columns = headers.length;
-					for (int r = 0; r < rr.length; r++) {
-						if (rr[r] != null && rr[r].strip() != "" && rr[r].has_prefix("|") == true) {
-							num_rows += 1;
-						}
-					}
-					print("PARAMROW: row count: %d, column count: %d\n",num_rows,num_columns);
-					csv = new string[num_rows,num_columns];
-					int tr = 0;
-					for (int r = 0; r < rr.length; r++) {
-						print("PARAMROW: row %d: %s\n",r,rr[r]);
-						if (rr[r] != null && rr[r].strip() != "" && rr[r].has_prefix("|") == true) {
-							ii = rr[r].index_of("|");
-							oo = rr[r].last_index_of("|");
-							if (oo > (ii + 1)) { rr[r] = rr[r].substring((ii+1),(oo - (ii + 1))); }
-							string[] cc = rr[r].split("|");
-							if (cc.length == 1 && cc[0].contains("-+-")) {
-								cc = rr[r].split("+");
-							}
-							for (int c = 0; c < num_columns; c++) {
-								csv[tr,c] = cc[c].strip();
-								print("PARAMROW: collecting row %d col %d : %s\n",tr,c,csv[tr,c]);
-							}
-							tr += 1;
-						}
-					}
-
-// make rows
-
+				csv = orgtabletodat(elements[e].params[idx].value);
+				if (csv.length[0] > 0 && csv.length[1] > 0) {
 					paramcolumnview = new Gtk.Box(HORIZONTAL,2);
 					Gtk.Box tablehedbox = new Gtk.Box(VERTICAL,2);
 					for (int r = 0; r < (csv.length[0] + 1); r++) {
@@ -3177,7 +3129,7 @@ public class ParamRow : Gtk.Box {
 									int ee = getelementindexbyid(elementid);
 									int pp = getparamindexbyid(ee,paramid);
 									csv[val.row,val.column] = val.text;
-									string norg = reorgtable();
+									string norg = reorgtable(csv);
 									elements[ee].params[pp].value = norg;
 								}
 							});
@@ -3198,8 +3150,22 @@ public class ParamRow : Gtk.Box {
 					paramcolumnview.vexpand = true;
 					paramcolumnview.get_style_context().add_provider(pancsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 					paramcolumnview.get_style_context().add_class("xx");
-					paramvalscroll.set_child(paramcolumnview);
+					gtktablescroll.set_child(paramcolumnview);
 				}
+
+// swisher
+
+				tablestack.set_transition_type (Gtk.StackTransitionType.SLIDE_LEFT_RIGHT);
+				tablestack.add_titled(gtktablescroll,"gtktable","gtktable");
+				tablestack.add_titled(orgtablescroll,"orgtable","orgtable");
+				tableswishbox.append(tablestack);
+				tableswishbox.append(tableswish);
+				tableswish.set_stack(tablestack);
+				tableswishbox.height_request = 200;
+				tableswish.get_first_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				tableswish.get_first_child().get_style_context().add_class("xx");
+				tableswish.get_last_child().get_style_context().add_provider(butcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
+				tableswish.get_last_child().get_style_context().add_class("xx");
 			}
 
 // editable multiline text params
@@ -3281,9 +3247,11 @@ public class ParamRow : Gtk.Box {
 							int[] q = {};
 							if (deps.length > 0) { 
 								if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
-								q = evalpath(deps,ee); 
+								if ((ee in deps) == false) {
+									q = evalpath(deps,ee);
+								}
 							}
-							if (elements[ee].type == "srcblock") { q += elements[ee].index; }
+							if (elements[ee].type == "srcblock" || elements[ee].type == "table" || elements[ee].type == "paragraph") { q += elements[ee].index; }
 							if(eval(1,q)) {
 								Gtk.Box pbo = (Gtk.Box) this.parent.parent.parent.parent.parent;
 								ElementBox elmo = (ElementBox) pbo.get_first_child();
@@ -3313,7 +3281,7 @@ public class ParamRow : Gtk.Box {
 				paramvalscroll.get_style_context().add_provider(entcsp, Gtk.STYLE_PROVIDER_PRIORITY_USER);
 				paramvalscroll.get_style_context().add_class("xx");
 				paramcontainer.append(paramsubrow);
-				paramcontainer.append(paramvalscroll);
+				if (elements[e].params[idx].type == "table") { paramcontainer.append(tableswishbox); } else { paramcontainer.append(paramvalscroll); }
 				paramsubrow.append(paramvalmaxi);
 				paramvalmaxi.toggled.connect(() => {
 
@@ -4382,7 +4350,7 @@ public class frownwin : Gtk.ApplicationWindow {
 		popcss = ".xx { border-radius: 0; border-color: %s; background: %s; color: %s; }".printf(sblin,sbbkg,sbsel);
 		popcsp.load_from_data(popcss.data);
 
-		butcss = ".xx { border-radius: 0; border-top: 1px solid %s; border-left: 1px solid %s; border-right: 1px solid %s; border-bottom: 1px solid %s; background: %s; color: %s; }".printf(sbhil,sbhil,sbshd,sbshd,sblit,sbsel);
+		butcss = ".xx { border-radius: 0; border-top: 1px solid %s; border-left: 1px solid %s; border-right: 1px solid %s; border-bottom: 1px solid %s; background: %s; color: %s; }\n.xx:checked { background: %s; }".printf(sbhil,sbhil,sbshd,sbshd,sblit,sbsel,sbhil);
 		butcsp = new Gtk.CssProvider();
 		butcsp.load_from_data(butcss.data);
 
