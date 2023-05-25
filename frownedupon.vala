@@ -1998,7 +1998,36 @@ string writefiletopath (int ind, string p, string n, string e, string s) {
 	} else { print("%s\tWRITE: empty input, aborting.\n",tabs); }
 	return "";
 }
-
+string orgtabletocsv(int ind, string org) {
+	string tabs = ("%-" + ind.to_string() + "s").printf("\t");
+	print("%sORGTABLETOCSV: started...\n",tabs);
+	string o = "";
+	if (org != null && org.strip() != "") {
+		string[] rows = org.split("\n");
+		int ii = rows[0].index_of("|");
+		int oo = rows[0].last_index_of("|");
+		string headrow = rows[0];
+		if(oo > (ii + 1)) { headrow = rows[0].substring((ii+1),(oo - (ii + 1))); }
+		string[] header = headrow.split("|");
+		if (rows.length > 0) {
+			for (int r = 0; r < rows.length; r++) {
+				if (rows[r].strip() != "") {
+					if (rows[r].has_prefix("|--") == false && rows[r].contains("--+--") == false) {
+						ii = rows[r].index_of("|");
+						oo = rows[r].last_index_of("|");
+						if(oo > (ii + 1)) { rows[r] = rows[r].substring((ii+1),(oo - (ii + 1))); }
+						string[] cols = rows[r].split("|");
+						if (cols.length == header.length) {
+							o = "%s%s\n".printf(o,string.joinv(";",cols));
+						} else { print("%sORGTABLETOCSV: col length %d doesn't match header length %d, skipping...\n",tabs,cols.length,header.length); }
+					} else { print("%sORGTABLETOCSV: skiping hline...\n",tabs); }
+				} else { print("%sORGTABLETOCSV: skiping empty row...\n",tabs); }
+			}
+		} else { print("%sORGTABLETOCSV: no rows, aborting...\n",tabs); }
+	} else { print("%sORGTABLETOCSV: empty input string, nothing to do...\n",tabs); }
+	print("%sORGTABLETOCSV: returns:\n%s\n",tabs, o);
+	return o;
+}
 string[,] orgtabletodat (string org) {
 	string[,] tbldat = {{""}};
 	string[] rr = org.split("\n");
@@ -2421,62 +2450,67 @@ bool eval(int ind, int[] e) {
 				string[,] tbldat = orgtabletodat(elements[e[q]].params[srcindex].value);
 				if (elements[e[q]].params[frmindex].value != null && elements[e[q]].params[frmindex].value != "") {
 					print("%s\tEVAL:table formulae parameter: %s\n",tabs,elements[e[q]].params[frmindex].name);
-					string xpr = elements[e[q]].params[frmindex].value;
-					int oo = xpr.index_of(")");
-					int ii = xpr.last_index_of("(");
-					int sks = 0;
-					bool wassum = false;
-					while ( oo >= 0 ) {
-						if (sks > 10) { break; }
-						string inner = xpr.substring(ii,(oo - (ii - 1)));
-						if (wassum) { inner = inner.replace("vsum",""); inner = inner.replace("hsum",""); }
-						print("\tinner expression is: %s\n",inner);
-						if (inner.contains("..")) {
-							double sm = dosum(inner,tbldat);
-							inner = "%f".printf(sm);
-							wassum = true;
-						} else { wassum = false; }
-						if (inner.contains("+") || inner.contains("-")) {
-							inner = inner.replace("(",""); inner = inner.replace(")","");
-							double pm = doplusminus(inner);
-							inner = "%f".printf(pm);
+					string[] xprs = elements[e[q]].params[frmindex].value.split("\n");
+					foreach (string xpr in xprs) {
+						int oo = xpr.index_of(")");
+						int ii = xpr.last_index_of("(");
+						int sks = 0;
+						bool wassum = false;
+						while ( oo >= 0 ) {
+							if (sks > 10) { break; }
+							string inner = xpr.substring(ii,(oo - (ii - 1)));
+							if (wassum) { inner = inner.replace("vsum",""); inner = inner.replace("hsum",""); }
+							print("\tinner expression is: %s\n",inner);
+							if (inner.contains("..")) {
+								double sm = dosum(inner,tbldat);
+								inner = "%f".printf(sm);
+								wassum = true;
+							} else { wassum = false; }
+							if (inner.contains("+") || inner.contains("-")) {
+								inner = inner.replace("(",""); inner = inner.replace(")","");
+								double pm = doplusminus(inner);
+								inner = "%f".printf(pm);
+							}
+							if (inner.contains("*") || inner.contains("/")) {
+								inner = inner.replace("(",""); inner = inner.replace(")","");
+								double md = domultdiv(inner);
+								inner = "%f".printf(md);
+							}
+							xpr = xpr.splice(ii,(oo + 1),inner);
+							print("\t\tspliced expression: %s\n",xpr);
+							oo = xpr.index_of(")");
+							ii = xpr.last_index_of("(");
+							sks += 1;
 						}
-						if (inner.contains("*") || inner.contains("/")) {
-							inner = inner.replace("(",""); inner = inner.replace(")","");
-							double md = domultdiv(inner);
-							inner = "%f".printf(md);
-						}
-						xpr = xpr.splice(ii,(oo + 1),inner);
-						print("\t\tspliced expression: %s\n",xpr);
-						oo = xpr.index_of(")");
-						ii = xpr.last_index_of("(");
-						sks += 1;
-					}
-					string[] ep = xpr.split("=");
-					if (ep.length == 2) {
-						ep[0] = ep[0].strip();
-						ep[1] = ep[1].strip();
-							if (ep[0] != "") {
-							ii = ep[0].index_of("@");
-							oo = ep[0].index_of("$");
-							string rs = ep[0].substring((ii+1),(oo - (ii + 1)));
-							int r = getrefindex(rs,tbldat);
-							string cs = ep[0].substring((oo + 1),1);
-							int c = getrefindex(cs,tbldat);
-							double fm = 0.0;
-							if (ep[1] != "") {
-								if (ep[1].contains(";")) {
-									fm = doformat(ep[1]);
-								} else {
-									fm = double.parse(ep[1]);
+						string[] ep = xpr.split("=");
+						if (ep.length == 2) {
+							ep[0] = ep[0].strip();
+							ep[1] = ep[1].strip();
+								if (ep[0] != "") {
+								ii = ep[0].index_of("@");
+								oo = ep[0].index_of("$");
+								string rs = ep[0].substring((ii+1),(oo - (ii + 1)));
+								int r = getrefindex(rs,tbldat);
+								string cs = ep[0].substring((oo + 1),1);
+								int c = getrefindex(cs,tbldat);
+								double fm = 0.0;
+								if (ep[1] != "") {
+									if (ep[1].contains(";")) {
+										fm = doformat(ep[1]);
+									} else {
+										fm = double.parse(ep[1]);
+									}
+									tbldat[r,c] = "%f".printf(fm);
 								}
-								tbldat[r,c] = "%f".printf(fm);
 							}
 						}
 					}
 				}
-				elements[e[q]].outputs[0].value = reorgtable(tbldat);
-				string wr = writefiletopath((ind + 16),"",elements[e[q]].outputs[0].name,"txt",elements[e[q]].outputs[0].value);
+				print("%s\tEVAL: updating org table for %s.%s\n",tabs,elements[e[q]].name,elements[e[q]].params[srcindex].name);
+				elements[e[q]].params[srcindex].value = reorgtable(tbldat);
+				print("%s\tEVAL: sending updated org table to csv:\n%s\n",tabs,elements[e[q]].params[srcindex].value);
+				elements[e[q]].outputs[0].value = orgtabletocsv((ind+1),elements[e[q]].params[srcindex].value);
+				string wr = writefiletopath((ind + 1),"",elements[e[q]].outputs[0].name,"txt",elements[e[q]].outputs[0].value);
 				cleanup += wr;
 			}
 		}
@@ -3271,24 +3305,28 @@ public class ParamRow : Gtk.Box {
 							}
 							if (elements[ee].type == "srcblock" || elements[ee].type == "table" || elements[ee].type == "paragraph") { q += elements[ee].index; }
 							if(eval(1,q)) {
+// loop through displayed element ui, update their outputs if they're in the eval list
 								Gtk.Box pbo = (Gtk.Box) this.parent.parent.parent.parent;
 								ElementBox elmo = (ElementBox) pbo.get_first_child();
 								while (elmo != null) {
-									elmo.updatemyoutputs();
+									if (elmo.index in q) { elmo.updatemyoutputs(); }
 									elmo = (ElementBox) elmo.get_next_sibling();
 								}
+// update sender's table ui
 								if (elements[ee].type == "table") {
 									doup = false; 
-									for ( int i = 0; i < elements[ee].params.length; i++) {
+									for (int i = 0; i < elements[ee].params.length; i++) {
 										if (elements[ee].params[i].type == "table") {
-											elements[ee].params[i].value = elements[ee].outputs[0].value;
+											elmo = (ElementBox) parameval.get_ancestor(typeof(ElementBox));
+											ParamRow myrow = (ParamRow) elmo.elmparambox.get_first_child().get_next_sibling();
+											if (spew) { print("PARAMROW: updating org table:\n%s\n",elements[ee].params[i].value); }
+											myrow.paramvalorgtable.buffer.text = elements[ee].params[i].value;
+											if (spew) { print("PARAMROW: verifying org table:\n%s\n",myrow.paramvalorgtable.buffer.text); }
+											if (spew) { print("PARAMROW: building columnview for %s.%s...\n",elements[ee].name,elements[ee].params[i].name); }
+											myrow.buildcolumnview();
+											break; // there's only one table per param element
 										}
 									}
-									elmo = (ElementBox) parameval.get_ancestor(typeof(ElementBox));
-									ParamRow myrow = (ParamRow) elmo.elmparambox.get_first_child().get_next_sibling();
-									myrow.paramvalorgtable.buffer.text = elements[ee].outputs[0].value;
-									myrow.buildcolumnview();
-									doup = true;
 								}
 							}
 							doup = true;
@@ -3453,6 +3491,7 @@ public class InputRow : Gtk.Box {
 public class ElementBox : Gtk.Box {
 	public string type;
 	public string name;
+	public int index;
 	public uint elementid;
 	private Gtk.Box elmbox;
 	private Gtk.Box elmtitlebar;
@@ -3518,6 +3557,7 @@ public class ElementBox : Gtk.Box {
 			this.elementid = elements[idx].id;
 			this.type = elements[idx].type;
 			this.name = elements[idx].name; 
+			this.index = idx;
 			print("ELEMENTBOX:\tfound a %s element: %s\n",elements[idx].type,elements[idx].name);
 			elmbox = new Gtk.Box(VERTICAL,4);
 			elmtitlebar = new Gtk.Box(HORIZONTAL,0);
