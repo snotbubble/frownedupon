@@ -138,6 +138,7 @@ double doplusminus (string inner) {
 	}
 	return sm;
 }
+// separate subtraction (a - b) from negative (-a)
 string subminus (string s) {
 	string o = s;
 	if (s.contains("-")) {
@@ -179,7 +180,7 @@ string replacerefs (int myr, int myc, string inner, string[,] tbldat) {
 				//print("\tevallisp: s.canon = %s\n",t);
 				for (int h = b; h < t.length; h ++) {
 					//print("evallisp: \tchecking char %d %c in block starting at %d\n",h,t[h],b);
-					if (t[h] == '.') {
+					if (t[h] == '.' || (h == t.length - 1)) {
 						if ((rc[0] + rc[1]) != -2) {
 							//print("evallisp: \t\trc[0] = %d, rc[1] = %d\n",rc[0],rc[1]);
 							if (rc[0] == -1) { r = myr; rc[0] = 99999; }
@@ -225,7 +226,7 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 		print("domaths: expression: %s\n",s);
 		int y = 0;
 		foreach (string x in ops) {
-			if (s.contains(x)) {
+			//if (s.contains(x)) {
 			while (s.contains(x)) {
 				//print("domaths: \texpression contains %s\n",x);
 				if (y > 10) { break; }
@@ -284,8 +285,8 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 								case "!": sm = aa - bb; break;
 								default: sm = 0.0; break;
 							}
-						} else { print("ERROR: cant mult %s and %s",sp[0],sp[1]); break; }
-					} else { print("ERROR: cant mult %s and %s",sp[0],sp[1]); break; }
+						} else { print("ERROR: %s or %s are not float",sp[0],sp[1]); break; }
+					} else { print("ERROR: %s or %s are not float",sp[0],sp[1]); break; }
 					//print("domaths: s.length: %d\n",s.length);
 					print("domaths: \tsplicing from %d to %d\n",aii,oo);
 					if (aii >= 0 && aii < s.length && aii < oo) {
@@ -299,7 +300,7 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 			}
 		}
 
-		}
+		//}
 		o = s;
 	}
 	return o;
@@ -403,7 +404,21 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		}
 		if (inner.contains("string")) { }
 		if (inner.contains("substring")) { }
-		if (inner.contains("concat")) { }
+		if (inner.contains("concat")) { 
+// (concat "s" "s")
+			inner = inner.replace("concat","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.split(" ");
+			if (pts.length > 0 && pts[0] != "") {
+				for (int h = 0; h < pts.length; h++) {
+					string hh = pts[h].replace("\"","").strip();
+					pts[h] = hh;
+				}
+				print("\n");
+				return string.joinv("",pts);
+			}
+		}
 		if (inner.contains("downcase")) { 
 			print("\tevallisp downcase %s...\n",inner);
 			inner = inner.replace("downcase","");
@@ -421,7 +436,19 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 			return inner.up(); 
 		}
 // number
-		if (inner.contains("abs")) { }
+		if (inner.contains("abs")) { 
+			inner = inner.replace("abs","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = v.abs();
+					return "%f".printf(v);
+				}
+			}
+		}
 		if (inner.contains("mod")) { }
 		if (inner.contains("random")) { }
 		if (inner.contains("fceiling")) { }
@@ -475,7 +502,7 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		if (inner.contains("sqrt")) { }
 		if (inner.contains("float-pi")) { }
 	}
-	return "";
+	return instr;
 }
 double dosum (string inner, string[,] dat) {
 	double sm = 0.0;
@@ -594,6 +621,7 @@ string dolisp (int x, int y, string e, string[,] tbldat) {
 			inner = replacerefs(x, y, inner, tbldat);
 			print("elisp: \tinner lisp expression: %s\n",inner);
 			string em = evallisp(x,y,inner,tbldat);
+			if ( em == inner ) { break; }
 			o = o.splice(ii,(oo + ii),em);
 			o = o.replace("\"","");
 			print("elisp: \tspliced expression = %s\n",o);
@@ -610,13 +638,13 @@ void main() {
 	string orgtbl = """| AA     | BB    | CC     | DD       |\n
 |--------+-------+--------+----------|\n
 | 68.0   | 39.47 | 128.15 | 337.59   |\n
-| 403.88 | 16.21 | 117.03 | 9.0      |\n
+| 403.88 | 16.21 | 117.03 | -9.0     |\n
 | 5.8    | 14.73 | 58.1   | 107.64   |\n
 |--------+-------+--------+----------|\n
 |        |       |        |          |""";
 
 	dat = orgtodat(orgtbl);
-	string theformula = "@>$4=((vsum(@I$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)";
+	string theformula = "@>$4=((vsum(@I$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)\n@1$2='(concat \"2_\" @1$2)\n@1$3 = '(abs @4$4) + '(org-sbe \"x\")";
 	//string e = theformula;
 	// we need 9.0846 from the above
 	string[] xprs = theformula.split("\n");
@@ -647,31 +675,121 @@ void main() {
 				oo = ep[0].index_of("$");
 				string rs = ep[0].substring((ii+1));
 				r = getrefindex(rs,dat);
-				print("target row: %d %s",r,rs);
+				print("target row: %d (%s)",r,rs);
 				string cs = ep[0].substring((oo + 1));
 				c = getrefindex(cs,dat);
-				print(", target col: %d, %s\n",c,cs);
+				print(", target col: %d, (%s)\n",c,cs);
 				//ep[1] = replacerefs(r, c, ep[1], dat);
-				int sks = 0;
-				if (ep[1].contains("'(")) {
-					ep[1] = dolisp(r,c,ep[1],dat);
+				bool skipfm = false;
+// elisp 1st
+				while (ep[1].contains("'(")) {
+					print("elisp: lisp expression is %s\n",ep[1]);
+					//ep[1] = dolisp(r,c,ep[1],dat);
+					string o = ep[1];
+					int qii = ep[1].index_of("'(") + 1;
+					int qoo = -1;
+					int oc = 0;
+// match brace of elisp
+					ep[1] = ep[1].splice((qii - 1),qii," ");
+					print("elisp: spliced comma: %s\n",ep[1]);
+					for (int h = qii; h < o.length; h++) {
+						if (o[h] == '(') { 
+							if (h == qii) { oc = 1; } else { oc += 1; }
+						}
+						if (o[h] == ')') { 
+							oc -= 1; 
+							qoo = h;
+							if ( oc == 0 ) { break; } 
+						}
+					}
+					print("elisp outer starts at %d, ends at %d\n",qii,qoo);
+// isolate elisp
+					o = ep[1].substring(qii,(qoo - (qii - 1)));
+					print("elisp: outer lisp expression is %s\n",o);
+					int z = 0;
+// sub-expressions
+					while (o.contains("(")) {
+						if (z > 20) { break; }
+						int eii = 0;
+						int eoo = -1;
+						eii = o.last_index_of("(");
+						string m = o.substring(eii);
+						eoo = m.index_of(")") + 1;
+						print("elisp: \tinner starts at %d, ends at %d\n",eii,eoo);
+						if (eoo != -1) {
+							string inner = o.substring(eii,eoo);
+							inner = replacerefs(r, c, inner, dat);
+							print("elisp: \tinner lisp expression: %s\n",inner);
+							string em = evallisp(r,c,inner,dat);
+							if ( em == inner ) { 
+								em = em.replace("(",""); em = em.replace(")","");
+								em = "ERROR: unknown function %s".printf(em); 
+							}
+							//em = em.replace("'","");
+							o = o.splice(eii,(eoo + eii),em);
+							o = o.replace("\"","");
+							print("elisp: \tspliced expression = %s\n",o);
+						} else { break; }
+						z += 1;
+					}
+					print("\n");
+					ep[1] = ep[1].splice(qii,qoo+1,o);
 				}
+// catch outer refs
 				if (ep[1].contains("@") || ep[1].contains("$")) {
 					if (ep[1][0] != '(') { ep[1] = "(%s)".printf(ep[1]); }
 				}
-				ep[1] = dotblfm(r,c,ep[1],dat);
-				print("checking formula val type: %s\n",ep[1]);
-				if (ep[1].contains(";")) {
-					fm = doformat(ep[1]);
-				} else {
-					fm = ep[1];
+// maths
+				//ep[1] = dotblfm(r,c,ep[1],dat);
+				if ( ep[1].strip() != "") {
+					string o = ep[1];
+					int z = 0;
+					int tii = -1;
+					int too = -1;
+					string inner = ep[1];
+					while (o.contains("(")) {
+						if (z > 50) { break; }
+						tii = o.last_index_of("(");
+						string m = o.substring(tii);
+						too = m.index_of(")") + 1;
+						inner = o.substring(tii,too);
+						print("tblfm: inner expression: %s\n",inner);
+						if (inner.contains("..")) {
+							m = o.substring(0,tii);
+							//print("before expression : %s\n",m);
+							double  sm = dosum(inner,dat);
+							tii = m.last_index_of("vsum");
+							print("tblfm: sum = %f\n",sm);
+							o = o.splice(tii,(too + tii + 4),"%f".printf(sm));
+							print("tblfm: spliced expression = %s\n",o);
+						}
+						if (inner.contains("/") || inner.contains("*") || inner.contains("+") || inner.contains("-")){
+							inner = inner.replace("(",""); inner = inner.replace(")","");
+							string sm = domaths(r, c, inner, dat);
+							print("tblfm: result = %s\n",sm);
+							o = o.splice(tii,(too + tii),sm);
+							print("tblfm: spliced expression = %s\n",o);
+						}
+						if (o == ep[1]) { o = "ERROR: unknown function %s".printf(o); break; }
+						z += 1;
+					}
+					if(o != null && o.strip() != "") { ep[1] = o; }
 				}
-				print("\nformula changed dat[%d,%d] from \"%s\" to %s\n\n",r,c,dat[r,c],fm);
-				dat[r,c] = fm;
-				print("%s\n",reorgtable(dat));
-				print("\n#+TBLFM: %s\n",theformula);
-				int64 ofmte = GLib.get_real_time();
-				print("\ntable formula edit took %f microseconds\n\n",((double) (ofmte - ofmts)));
+// formatting
+				if ( ep[1].strip() != "") {
+					print("checking formula val type: %s\n",ep[1]);
+					if (ep[1].contains(";")) {
+						fm = doformat(ep[1]);
+					} else {
+						fm = ep[1];
+					}
+					print("\nformula changed dat[%d,%d] from \"%s\" to %s\n\n",r,c,dat[r,c],fm);
+					dat[r,c] = fm;
+					print("%s\n",reorgtable(dat));
+					print("\n#+TBLFM: %s\n",theformula);
+					int64 ofmte = GLib.get_real_time();
+					print("\ntable formula edit took %f microseconds\n\n",((double) (ofmte - ofmts)));
+				}
 			}
 		}
 	}
