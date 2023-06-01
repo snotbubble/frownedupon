@@ -1,9 +1,12 @@
 // parse and run org tblfm expressions
 // by c.p.brown, 2023
 //
-// todo next: finish elisp functions
+// todo next: handle whole row/col formulae, then finish elisp functions
 
-string[,] orgtodat (string org) {
+bool spew;
+string[,] orgtodat (int ind, string org) {
+	int64 odtts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	string[,] dat = {{""}};
 	string[] rr = org.split("\n");
 	if (rr[0].has_prefix("|")) {
@@ -42,9 +45,13 @@ string[,] orgtodat (string org) {
 			}
 		}
 	}
+	int64 odtte = GLib.get_real_time();
+	if (spew) { print("%sorgtodat took %f microseconds\n",tabs,((double) (odtte - odtts)));}
 	return dat;
 }
-string reorgtable (string[,] dat) {
+string reorgtable (int ind, string[,] dat) {
+	int64 reots = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	int[] maxlen = new int[dat.length[1]];
 	string o = "";
 	string hln = "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------";
@@ -82,23 +89,27 @@ string reorgtable (string[,] dat) {
 			o = o.concat("\n");
 		}
 	}
+	int64 reote = GLib.get_real_time();
+	if (spew) { print("%sreorgtable took %f microseconds\n",tabs,((double) (reote - reots)));}
 	return o;
 }
 // TODO: handle pre-trimmed input...
-int getrefindex (string r, string[,] dat) {
+int getrefindex (int ind, string r, string[,] dat) {
+	int64 idxts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	int o = 0;
 	if (r != null && r.strip() != "") {
+		if (spew) { print("%sgetrefindex: input is %s\n",tabs,r); }
 		string s = r;
 		s.canon("1234567890<>I",'.');
-		//print("getrefindex: canonized string: %s\n",s);
 		int oo = s.index_of(".");
 		if (oo > 0) {
 			s = s.substring(0,oo);
-			//print("getrefindex: sub string: %s\n",s);
 			switch (s.get_char(0)) {
-				case '>': o = (dat.length[0] - (s.split(">").length - 1)); break;
-				case '<': o = s.split("<").length; break;
+				case '>': if (spew) { print("%s\tget prev ref (>)...\n",tabs); } o = (dat.length[0] - (s.split(">").length - 1)); break;
+				case '<': if (spew) { print("%s\tget next ref (<)...\n",tabs); } o = s.split("<").length; break;
 				case 'I': 
+					if (spew) { print("%s\tget hline ref (I)...\n",tabs); }
 					int qq = 0; 
 					int x = s.split("I").length - 1;
 					for (int i = 0; i < dat.length[0]; i++) { 
@@ -114,32 +125,15 @@ int getrefindex (string r, string[,] dat) {
 			if (int.try_parse(s,out t)) { o = t - 1; }
 		}
 	}
+	if (spew) { print("%sgetrefindex: zero-based cell ref is %d\n",tabs,o); }
+	int64 idxte = GLib.get_real_time();
+	if (spew) { print("%sgetrefindex: took %f microseconds\n",tabs,((double) (idxte - idxts)));}
 	return o;
 }
-double doplusminus (string inner) {
-	double sm = 0.0;
-	if (inner != null && inner.strip() != "") {
-		string s = inner;
-		if (s.contains("+")) {
-			string[] sp = s.split("+");
-			if (sp.length == 2) {
-				double aa = double.parse(sp[0].strip());
-				double bb = double.parse(sp[1].strip());
-				sm = aa + bb;
-			}
-		} else {
-			string[] sp = s.split("-");
-			if (sp.length == 2) {
-				double aa = double.parse(sp[0].strip());
-				double bb = double.parse(sp[1].strip());
-				sm = aa - bb;
-			}
-		}
-	}
-	return sm;
-}
 // separate subtraction (a - b) from negative (-a)
-string subminus (string s) {
+string subminus (int ind, string s) {
+	int64 pusts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	string o = s;
 	if (s.contains("-")) {
 		char[] nums = {'0','1','2','3','4','5','6','7','8','9'};
@@ -163,12 +157,17 @@ string subminus (string s) {
 			}
 		}
 	}
+	int64 puste = GLib.get_real_time();
+	if (spew) { print("%ssubminus took %f microseconds\n",tabs,((double) (puste - pusts)));}
 return o;
 }
-string replacerefs (int myr, int myc, string inner, string[,] tbldat) {
+string replacerefs (int ind, int myr, int myc, string inner, string[,] tbldat) {
+	int64 refts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	if (inner != null && inner.strip() != "") {
-		string s = inner;
 		if (inner.contains("@") || inner.contains("$")) {
+			if (spew) { print("%sreplacerefs: input is %s\n",tabs,inner); }
+			string s = inner;
 			int[] rc = {-1,-1};
 			int y = 0;
 			int b = 0;
@@ -187,7 +186,7 @@ string replacerefs (int myr, int myc, string inner, string[,] tbldat) {
 							if (rc[1] == -1) { c = myc; rc[1] = 99999;}
 							//print("evallisp: \t\tr = %d, c = %d\n",r,c);
 							s = s.splice(int.min(rc[0],rc[1]),h,tbldat[r,c]);
-							print("replacerefs: \tspliced expression: %s\n",s);
+							if (spew) { print("%sreplacerefs: spliced expression: %s\n",tabs,s); }
 						}
 						rc = {-1,-1};
 						b = ((h + 1) - (t.length - s.length));
@@ -198,32 +197,43 @@ string replacerefs (int myr, int myc, string inner, string[,] tbldat) {
 						string cs = t.substring((h+1));
 						//print("\tevallisp: \t\tcs = %s\n",cs);
 						rc[1] = h;
-						c = getrefindex(cs, tbldat);
+						c = getrefindex((ind + 1),cs, tbldat);
 						//print("\tevallisp: \t\tc = %d\n",c);
 					}
 					if (t[h] == '@') {
 						string rs = t.substring((h + 1));
 						//print("\tevallisp: \t\trs = %s\n",rs);
 						rc[0] = h;
-						r = getrefindex(rs, tbldat);
+						r = getrefindex((ind + 1),rs, tbldat);
 						//print("\tevallisp: \t\tr = %d\n",r);
 					}
 				}
 				y += 1;
 			}
+			int64 refte = GLib.get_real_time();
+			if (spew) { print("%sreplacerefs took %f microseconds\n",tabs,((double) (refte - refts)));}
 			return s;
-			print("\tevallisp: spliced string: %s\n\n",inner);
 		}
 	}
+	int64 refte = GLib.get_real_time();
+	if (spew) { print("%sreplacerefs took %f microseconds\n",tabs,((double) (refte - refts)));}
 	return inner;
 }
-string domaths (int myr, int myc, string inner, string[,] tbldat) {
+string domaths (int ind, int myr, int myc, string inner, string[,] tbldat) {
+	int64 mthts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	string o = inner;
 	string[] ops = {"*", "/", "+", "!"};
 	if (inner != null && inner.strip() != "") {
-		string s = replacerefs(myr, myc, inner, tbldat);
-		s = subminus(s); s = s.replace("-"," -");
-		print("domaths: expression: %s\n",s);
+		if (spew) { print("%sdomaths input .....: %s\n",tabs,inner); }
+		string s = inner;
+		if (inner.contains("@") || inner.contains("$")) {
+			s = replacerefs((ind + 1),myr, myc, inner, tbldat);
+		}
+		if (s.contains("-")) {
+			s = subminus((ind + 1),s); s = s.replace("-"," -");
+		}
+		if (spew) { print("%sdomaths expression : %s\n",tabs,s); }
 		int y = 0;
 		foreach (string x in ops) {
 			//if (s.contains(x)) {
@@ -232,7 +242,6 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 				if (y > 10) { break; }
 				double sm = 0.0;
 				string t = s; 
-				//t = subminus(t);
 				switch (x) {
 					case "*": t.canon("1234567890.*-",'_'); break;
 					case "/": t.canon("1234567890./-",'_'); break;
@@ -240,7 +249,7 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 					case "!": t.canon("1234567890.!-",'_'); break;
 					default:  t.canon("1234567890.",'_'); break;
 				}
-				print("domaths: \ts.canon: %s\n",t);
+				//print("domaths: \ts.canon: %s\n",t);
 				string[] sp = t.split(x);
 				if (sp.length > 1) {
 					//print("domaths: \tleft = %s, right = %s\n",sp[0],sp[1]);
@@ -285,14 +294,14 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 								case "!": sm = aa - bb; break;
 								default: sm = 0.0; break;
 							}
-						} else { print("ERROR: %s or %s are not float",sp[0],sp[1]); break; }
-					} else { print("ERROR: %s or %s are not float",sp[0],sp[1]); break; }
+						} else { print("%sERROR: %s or %s are not float",tabs,sp[0],sp[1]); break; }
+					} else { print("%sERROR: %s or %s are not float",tabs,sp[0],sp[1]); break; }
 					//print("domaths: s.length: %d\n",s.length);
-					print("domaths: \tsplicing from %d to %d\n",aii,oo);
+					//print("domaths: \tsplicing from %d to %d\n",aii,oo);
 					if (aii >= 0 && aii < s.length && aii < oo) {
 						if (oo > aii && oo <= s.length) {
 							s = s.splice(aii,oo,"%f".printf(sm));
-							print("domaths: spliced expression: %s\n",s);
+							print("%sdomaths splice ....: %s\n",tabs,s);
 						}
 					}
 					y += 1;
@@ -303,28 +312,36 @@ string domaths (int myr, int myc, string inner, string[,] tbldat) {
 		//}
 		o = s;
 	}
+	int64 mthte = GLib.get_real_time();
+	if (spew) { print("%sdomaths took %f microseconds\n",tabs,((double) (mthte - mthts)));}
 	return o;
 }
-string doformat (string n) {
+string doformat (int ind, string n) {
+	int64 frmts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	if (n != null && n != "") {
+		if (spew) { print("%sdoformat: input is %s\n",tabs,n); }
 		string[] np = n.split(";");
 		if (np.length == 2) {
 			if (np[0] != "" && np[1] != "") {
-				//print("np[0] = %s\n",np[0]);
-				//print("np[1] = %s\n",np[1]);
 				string h = np[1].printf(double.parse(np[0]));
-				//print("h = %s\n",h);
+				int64 frmte = GLib.get_real_time();
+				if (spew) { print("%sdoformat took %f microseconds\n",tabs,((double) (frmte - frmts)));}
 				return h;
 			}
 		}
 	}
+	int64 frmte = GLib.get_real_time();
+	if (spew) { print("%sdoformat took %f microseconds\n",tabs,((double) (frmte - frmts)));}
 	return n;
 }
-string evallisp (int myr, int myc, string instr, string[,] tbldat) {
+string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
+	int64 lspts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	string inner = instr;
 	double lm = 0.0;
 	if (inner != null && inner.strip() != "") {
-		print("\n\tevallisp: inner = %s\n",inner);
+		if (spew) { print("%sevallisp: input is %s\n",tabs,inner); }
 		int ic = 1;
 		int ii = -1;
 		int oo = -1;
@@ -332,7 +349,7 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		int c = myc;
 		
 		if (inner.contains("format")) { 
-			print("\tevallisp format %s...\n",inner);
+			if (spew) { print("%s\tformat...\n",tabs); }
 			inner = inner.replace("format","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -341,7 +358,7 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 			string[] k = {};
 			foreach (string g in pts) { if (g.strip() != "") { ptl += 1; k += g.strip(); } }
 			if (k.length > 1 && k[0].contains("%")) {
-				print("\tevalelisp format: \tgetting tokens in %s\n",k[0]);
+				if (spew) { print("%s\t\tgetting tokens in %s\n",tabs,k[0]); }
 				int n = 1;
 				int ival = 0;
 				double dval = 0.0;
@@ -349,41 +366,46 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 				k[0] = k[0].replace("%","%%");
 				int y = 0;
 				while (k[0].contains("%")) {
-					//print("n = %d, k.length = %d\n",n,k.length);
 					if (y > 10) { break; }
 					ii = k[0].index_of("%");
-					//print("ii = %d, k[0].length = %d\n",ii,k[0].length);
 					string tk = k[0].substring(ii,3);
-					//if (tk == "%d") {
 					if (strcmp(tk,"%%d") == 0) {
 						if (int.try_parse(k[n],out ival)) {
 							k[0] = k[0].splice(ii,(ii+3),k[n]);
-							print("\tevalelisp format: \tspliced format: %s\n",k[0]);
+							if (spew) { print("%s\t\tspliced format: %s\n",tabs,k[0]); }
 							n += 1;
-						} else { return "ERROR: format arg %d not an int".printf(n); }
+						} else { 
+							int64 lspte = GLib.get_real_time();
+							if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							return "ERROR: format arg %d not an int".printf(n); 
+						}
 					}
 					if (strcmp(tk,"%%f") == 0) {
-						//print("\tevalelisp format: \tsplicing k[%d] %s\n",n,k[n]);
 						if (double.try_parse(k[n],out dval)) {
 							k[0] = k[0].splice(ii,(ii+3),k[n]);
-							print("\tevalelisp format: \tspliced format: %s\n",k[0]);
+							if (spew) { print("%s\t\tspliced format: %s\n",tabs,k[0]); }
 							n += 1;
-						} else { return "ERROR: format arg %d not an int".printf(n); }
+						} else { 
+							int64 lspte = GLib.get_real_time();
+							if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							return "ERROR: format arg %d not an int".printf(n); 
+						}
 					}
 					if (strcmp(tk,"%%s") == 0) {
-						//print("\tevalelisp format: \tsplicing k[%d] %s\n",n,k[n]);
 						k[0] = k[0].splice(ii,(ii+3),k[n]);
-						print("\tevalelisp format: \tspliced format: %s\n",k[0]);
+						if (spew) { print("%s\t\tspliced format: %s\n",tabs,k[0]); }
 						n += 1;
 					}
 					y += 1;
 				}
-				print("\n");
+				int64 lspte = GLib.get_real_time();
+				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return k[0];
 			}
 		}
 		if (inner.contains("make-string")) {
 // (make-string 5 ?x)
+			if (spew) { print("%s\tmake-string...\n",tabs); }
 			inner = inner.replace("make-string","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -398,7 +420,8 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 					ic = 1;
 					docount = int.try_parse(hh,out ic);
 				}
-				print("\n");
+				int64 lspte = GLib.get_real_time();
+				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv(" ",pts);
 			}
 		}
@@ -406,6 +429,7 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		if (inner.contains("substring")) { }
 		if (inner.contains("concat")) { 
 // (concat "s" "s")
+			if (spew) { print("%s\tconcat...\n",tabs); }
 			inner = inner.replace("concat","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -415,28 +439,35 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 					string hh = pts[h].replace("\"","").strip();
 					pts[h] = hh;
 				}
-				print("\n");
+				int64 lspte = GLib.get_real_time();
+				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv("",pts);
 			}
 		}
 		if (inner.contains("downcase")) { 
-			print("\tevallisp downcase %s...\n",inner);
+// (downcase "s")
+			if (spew) { print("%s\tdowncase...\n",tabs); }
 			inner = inner.replace("downcase","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
-			print("\n");
+			int64 lspte = GLib.get_real_time();
+			if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 			return inner.down(); 
 		}
 		if (inner.contains("upcase")) { 
-			print("\tevallisp upcase %s...\n",inner);
+// (upcase "s")
+			if (spew) { print("%s\tupcase...\n",tabs); }
 			inner = inner.replace("upcase","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
-			print("\n");
+			int64 lspte = GLib.get_real_time();
+			if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 			return inner.up(); 
 		}
 // number
 		if (inner.contains("abs")) { 
+// (abs -1)
+			if (spew) { print("%s\tabs...\n",tabs); }
 			inner = inner.replace("abs","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -445,6 +476,8 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 				double v = 0.0;
 				if (double.try_parse(pts[0], out v)) {
 					v = v.abs();
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 					return "%f".printf(v);
 				}
 			}
@@ -456,6 +489,8 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		if (inner.contains("fround")) { }
 		if (inner.contains("ftruncate")) { }
 		if (inner.contains("min")) { 
+// (min 1 2 3...)
+			if (spew) { print("%s\tmin...\n",tabs); }
 			inner = inner.replace("min","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -469,11 +504,15 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 							v = double.min(v,j);
 						}
 					}
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 					return "%f".printf(v);
 				}
 			}
 		}
 		if (inner.contains("max")) { 
+// (max 1 2 3...)
+			if (spew) { print("%s\tmax...\n",tabs); }
 			inner = inner.replace("max","");
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
@@ -487,6 +526,8 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 							v = double.max(v,j);
 						}
 					}
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 					return "%f".printf(v);
 				}
 			}
@@ -502,138 +543,88 @@ string evallisp (int myr, int myc, string instr, string[,] tbldat) {
 		if (inner.contains("sqrt")) { }
 		if (inner.contains("float-pi")) { }
 	}
+	int64 lspte = GLib.get_real_time();
+	if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 	return instr;
 }
-double dosum (string inner, string[,] dat) {
+double dosum (int ind, int myr, int myc, string inner, string[,] tbldat) {
+	int64 sumts = GLib.get_real_time();
+	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	double sm = 0.0;
 	if (inner != null && inner.strip() != "") {
-		int ii = 0;
-		int oo = 0;
-		int cf = 0;
-		int ct = 0;
-		int rf = 0;
-		int rt = 0;
-		string s = inner;
-		ii = s.index_of("@");
-		oo = s.index_of("$");
-		string r = s.substring((ii+1));
-		rf = getrefindex(r,dat);
-		s = s.splice((ii),(oo),"");
-
-		ii = s.index_of("$");
-		oo = s.index_of("..");
-		string c = s.substring((ii+1));
-		cf = getrefindex(c,dat);
-		s = s.splice((ii),(oo),"");
-
-		ii = s.index_of("@");
-		oo = s.index_of("$");
-		string rr = s.substring((ii+1));
-		rt = getrefindex(rr,dat);
-		s = s.splice((ii),(oo),"");
-
-		ii = s.index_of("$");
-		oo = s.index_of(")");
-		string cc = s.substring((ii+1));
-		ct = getrefindex(cc,dat);
-
-		if (rf == rt) {
-			for (int i = cf; i <= ct; i++) { 
-				double dd = double.parse(dat[rf,i]);
-				if ( dd > 0.0) { sm += dd; }
+		if (spew) { print("%sdosum: %s\n",tabs,inner); }
+		string[] sp = inner.split("..");
+		if (sp.length == 2) {
+			if (sp[0].strip() != "" && sp[1].strip() != "") {
+				int[] coords = {-1,-1,-1,-1};
+				for (int x = 0; x < 2; x++) {
+					int b = 0;
+					int[] rc = {-1,-1};
+					int y = 0;
+					int r = myr;
+					int c = myc;
+					while (sp[x].contains("@") || sp[x].contains("$")) {
+						if (y > 200) { print("ERROR: reference string stuck in the loop: %s\n",sp[x]); break; }
+						string t = sp[x]; t.canon("$@1234567890<>I",'.');
+						for (int h = b; h < t.length; h ++) {
+							if (t[h] == '.' || (h == t.length - 1)) {
+								if ((rc[0] + rc[1]) != -2) {
+									if (rc[0] == -1) { r = myr; rc[0] = 99999; }
+									if (rc[1] == -1) { c = myc; rc[1] = 99999; }
+									coords[(x+x)] = r; coords[(1+(x+x))] = c;
+									sp[x] = sp[x].splice(int.min(rc[0],rc[1]),h,"");
+									if (spew) { print("%sdosum: part%d row = %d, col = %d\n",tabs,x,r,c); }
+								}
+								rc = {-1,-1};
+								b = ((h + 1) - (t.length - sp[x].length));
+								r = myr; c = myc;
+								break;
+							}
+							if (t[h] == '$') { 
+								string cs = t.substring((h+1));
+								rc[1] = h;
+								c = getrefindex((ind + 1),cs, tbldat);
+							}
+							if (t[h] == '@') {
+								string rs = t.substring((h + 1));
+								rc[0] = h;
+								r = getrefindex((ind + 1),rs, tbldat);
+							}
+						}
+						y += 1;
+					}
+				}
+				if (spew) { print("%sdosum: zero-based cell refs...\n",tabs); }
+				if (spew) { print("%s\trow1=%d, col1=%d\n%s\trow2=%d, col2=%d\n",tabs,coords[0],coords[1],tabs,coords[2],coords[3]); }
+				if (coords[0] == coords[2]) {
+					for (int i = coords[1]; i <= coords[3]; i++) {
+						double dd = 0.0;
+						if (double.try_parse(tbldat[coords[0],i])) {
+							if ( dd != 0.0) { sm += dd; }
+						}
+					}
+					if (spew) { print("%s\thsum = %f\n",tabs,sm); }
+				}
+				if (coords[1] == coords[3]) {
+					for (int i = coords[0]; i <= coords[2]; i++) { 
+						double dd = 0.0;
+						if (double.try_parse(tbldat[i,coords[1]],out dd)) {
+							if ( dd != 0.0) { sm += dd; }
+						}
+					}
+					if (spew) { print("%s\tvsum = %f\n",tabs,sm); }
+				}
 			}
-			print("\t\thsum = %f\n",sm);
-		}
-		if (cf == ct) {
-			for (int i = rf; i <= rt; i++) { 
-				double dd = double.parse(dat[i,cf]);
-				if ( dd > 0.0) { sm += dd; }
-			}
-			print("\t\tvsum = %f\n",sm);
 		}
 	}
+	int64 sumte = GLib.get_real_time();
+	if (spew) { print("%sdosum took %f microseconds\n",tabs,((double) (sumte - sumts)));}
 	return sm;
-}
-string dotblfm (int x, int y, string e, string[,] tbldat) {
-	if (e != null && e.strip() != "") {
-		string o = e;
-		int z = 0;
-		int ii = -1;
-		int oo = -1;
-		string inner = e;
-		while (o.contains("(")) {
-			if (z > 50) { break; }
-			ii = o.last_index_of("(");
-			string m = o.substring(ii);
-			oo = m.index_of(")") + 1;
-			inner = o.substring(ii,oo);
-			print("tblfm: inner expression: %s\n",inner);
-			if (inner.contains("..")) {
-				m = o.substring(0,ii);
-				//print("before expression : %s\n",m);
-				double  sm = dosum(inner,tbldat);
-				ii = m.last_index_of("vsum");
-				print("tblfm: sum = %f\n",sm);
-				o = o.splice(ii,(oo + ii + 4),"%f".printf(sm));
-				print("tblfm: spliced expression = %s\n",o);
-				continue;
-			}
-			if (inner.contains("/") || inner.contains("*") || inner.contains("+") || inner.contains("-")){
-				inner = inner.replace("(",""); inner = inner.replace(")","");
-				string sm = domaths(x, y, inner,tbldat);
-				print("tblfm: result = %s\n",sm);
-				o = o.splice(ii,(oo + ii),sm);
-				print("tblfm: spliced expression = %s\n",o);
-			}
-			z += 1;
-		}
-		if(o != null && o.strip() != "") { return o; }
-	}
-	return e;
-}
-string dolisp (int x, int y, string e, string[,] tbldat) {
-	string o = e;
-	int ii = e.index_of("'(") + 1;
-	int oo = -1;
-	int oc = 0;
-	int cc = 0;
-	for (int h = 0; h < e.length; h++) {
-		if (e[h] == '(') { 
-			if (h == ii) { oc = 1; } else { oc += 1; }
-		}
-		if (e[h] == ')') { 
-			oc -= 1; 
-			oo = h;
-			if ( oc == 0 ) { break; } 
-		}
-	}
-	o = e.substring(ii,oo);
-	print("elisp: outer lisp expression is %s\n",o);
-	int z = 0;
-	while (o.contains("(")) {
-		if (z > 20) { break; }
-		ii = o.last_index_of("(");
-		string m = o.substring(ii);
-		oo = m.index_of(")") + 1;
-		print("elisp: \tinner starts at %d, ends at %d\n",ii,oo);
-		if (oo != -1) {
-			string inner = o.substring(ii,oo);
-			inner = replacerefs(x, y, inner, tbldat);
-			print("elisp: \tinner lisp expression: %s\n",inner);
-			string em = evallisp(x,y,inner,tbldat);
-			if ( em == inner ) { break; }
-			o = o.splice(ii,(oo + ii),em);
-			o = o.replace("\"","");
-			print("elisp: \tspliced expression = %s\n",o);
-		} else { break; }
-		z += 1;
-	}
-	print("\n");
-	return o;
 }
 
 void main() {
 	int64 ofmts = GLib.get_real_time();
+	spew = true;
 	string[,] dat;
 	string orgtbl = """| AA     | BB    | CC     | DD       |\n
 |--------+-------+--------+----------|\n
@@ -643,21 +634,21 @@ void main() {
 |--------+-------+--------+----------|\n
 |        |       |        |          |""";
 
-	dat = orgtodat(orgtbl);
-	string theformula = "@>$4=((vsum(@I$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)\n@1$2='(concat \"2_\" @1$2)\n@1$3 = '(abs @4$4) + '(org-sbe \"x\")";
+	dat = orgtodat(0,orgtbl);
+	string theformula = "@>$4=((vsum(@I$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)\n@1$2='(concat \"2_\" @1$2)\n@1$3 = '(abs @4$4) + '(org-sbe \"x\")\n@1=(33 * @2);%.2f";
 	//string e = theformula;
 	// we need 9.0846 from the above
 	string[] xprs = theformula.split("\n");
-		int ii = 0;
-		int oo = 0;
-		int r = 0;
-		int c = 0;
-		bool islisp = false;
-		bool wassum = false;
-		bool waslisp = false;
-		string fm = "";
+	int ii = 0;
+	int oo = 0;
+	int r = 0;
+	int c = 0;
+	bool islisp = false;
+	bool wassum = false;
+	bool waslisp = false;
+	string fm = "";
 	foreach (string e in xprs) {
-		print("readig formula : %s\n",e);
+		if (spew) { print("reading formula : %s\n",e); }
 		string[] ep = e.split("=");
 		ii = 0;
 		oo = 0;
@@ -671,27 +662,28 @@ void main() {
 			ep[0] = ep[0].strip();
 			ep[1] = ep[1].strip();
 			if (ep[0] != "" && ep[1] != "") {
+// TODO:
+// handle whole row/col target loops, eg: $3=($1*$2) -> for i in rows { cell[i,2] = cell[i,0] * cell[i,1] }
+				if (spew) { print("\tget target cell...\n"); }
 				ii = ep[0].index_of("@");
 				oo = ep[0].index_of("$");
 				string rs = ep[0].substring((ii+1));
-				r = getrefindex(rs,dat);
-				print("target row: %d (%s)",r,rs);
+				r = getrefindex(2,rs,dat);
+				if (spew) { print("\ttarget row: %d (%s)\n",r,rs); }
 				string cs = ep[0].substring((oo + 1));
-				c = getrefindex(cs,dat);
-				print(", target col: %d, (%s)\n",c,cs);
-				//ep[1] = replacerefs(r, c, ep[1], dat);
+				c = getrefindex(2,cs,dat);
+				if (spew) { print("\ttarget col: %d, (%s)\n",c,cs); }
 				bool skipfm = false;
 // elisp 1st
 				while (ep[1].contains("'(")) {
-					print("elisp: lisp expression is %s\n",ep[1]);
-					//ep[1] = dolisp(r,c,ep[1],dat);
+					if (spew) { print("\t\telisp: lisp expression is %s\n",ep[1]); }
 					string o = ep[1];
 					int qii = ep[1].index_of("'(") + 1;
 					int qoo = -1;
 					int oc = 0;
 // match brace of elisp
 					ep[1] = ep[1].splice((qii - 1),qii," ");
-					print("elisp: spliced comma: %s\n",ep[1]);
+					if (spew) { print("\t\telisp: spliced comma: %s\n",ep[1]); }
 					for (int h = qii; h < o.length; h++) {
 						if (o[h] == '(') { 
 							if (h == qii) { oc = 1; } else { oc += 1; }
@@ -702,37 +694,36 @@ void main() {
 							if ( oc == 0 ) { break; } 
 						}
 					}
-					print("elisp outer starts at %d, ends at %d\n",qii,qoo);
 // isolate elisp
 					o = ep[1].substring(qii,(qoo - (qii - 1)));
-					print("elisp: outer lisp expression is %s\n",o);
+					if (spew) { print("\t\telisp: outer lisp expression is %s\n",o); }
 					int z = 0;
 // sub-expressions
 					while (o.contains("(")) {
-						if (z > 20) { break; }
+						if (z > 200) { print("\nERROR: expression escaped the elisp inner loop: %s\n\n",o); break; } // incasement
+						if (spew) { print("\t\t\telisp inner: iteration %d\n",z); }
 						int eii = 0;
 						int eoo = -1;
 						eii = o.last_index_of("(");
 						string m = o.substring(eii);
 						eoo = m.index_of(")") + 1;
-						print("elisp: \tinner starts at %d, ends at %d\n",eii,eoo);
 						if (eoo != -1) {
 							string inner = o.substring(eii,eoo);
-							inner = replacerefs(r, c, inner, dat);
-							print("elisp: \tinner lisp expression: %s\n",inner);
-							string em = evallisp(r,c,inner,dat);
+							if (inner.contains("@") || inner.contains("$")) {
+								inner = replacerefs(4,r, c, inner, dat);
+							}
+							if (spew) { print("\t\t\telisp inner: lisp expression: %s\n",inner); }
+							string em = evallisp(4,r,c,inner,dat);
 							if ( em == inner ) { 
 								em = em.replace("(",""); em = em.replace(")","");
 								em = "ERROR: unknown function %s".printf(em); 
 							}
-							//em = em.replace("'","");
 							o = o.splice(eii,(eoo + eii),em);
 							o = o.replace("\"","");
-							print("elisp: \tspliced expression = %s\n",o);
+							if (spew) { print("\t\t\telisp inner: spliced expression = %s\n",o); }
 						} else { break; }
 						z += 1;
 					}
-					print("\n");
 					ep[1] = ep[1].splice(qii,qoo+1,o);
 				}
 // catch outer refs
@@ -740,35 +731,35 @@ void main() {
 					if (ep[1][0] != '(') { ep[1] = "(%s)".printf(ep[1]); }
 				}
 // maths
-				//ep[1] = dotblfm(r,c,ep[1],dat);
 				if ( ep[1].strip() != "") {
 					string o = ep[1];
 					int z = 0;
 					int tii = -1;
 					int too = -1;
 					string inner = ep[1];
+					if (spew) { print("\ttblfm checking expression: %s\n",ep[1]); }
 					while (o.contains("(")) {
-						if (z > 50) { break; }
+						if (z > 200) { print("\nERROR: expression escaped the tblfm inner loop: %s\n\n",o); break; }
 						tii = o.last_index_of("(");
 						string m = o.substring(tii);
 						too = m.index_of(")") + 1;
 						inner = o.substring(tii,too);
-						print("tblfm: inner expression: %s\n",inner);
+						if (spew) { print("\t\ttblfm: inner expression: %s\n",inner); }
 						if (inner.contains("..")) {
 							m = o.substring(0,tii);
 							//print("before expression : %s\n",m);
-							double  sm = dosum(inner,dat);
+							double  sm = dosum(3,r,c,inner,dat);
 							tii = m.last_index_of("vsum");
-							print("tblfm: sum = %f\n",sm);
+							if (spew) { print("\t\ttblfm: sum = %f\n",sm); }
 							o = o.splice(tii,(too + tii + 4),"%f".printf(sm));
-							print("tblfm: spliced expression = %s\n",o);
+							if (spew) { print("\t\ttblfm: spliced expression = %s\n",o); }
 						}
 						if (inner.contains("/") || inner.contains("*") || inner.contains("+") || inner.contains("-")){
 							inner = inner.replace("(",""); inner = inner.replace(")","");
-							string sm = domaths(r, c, inner, dat);
-							print("tblfm: result = %s\n",sm);
+							string sm = domaths(3,r, c, inner, dat);
+							if (spew) { print("\t\ttblfm: result = %s\n",sm); }
 							o = o.splice(tii,(too + tii),sm);
-							print("tblfm: spliced expression = %s\n",o);
+							if (spew) { print("\t\ttblfm: spliced expression = %s\n",o); }
 						}
 						if (o == ep[1]) { o = "ERROR: unknown function %s".printf(o); break; }
 						z += 1;
@@ -777,18 +768,17 @@ void main() {
 				}
 // formatting
 				if ( ep[1].strip() != "") {
-					print("checking formula val type: %s\n",ep[1]);
 					if (ep[1].contains(";")) {
-						fm = doformat(ep[1]);
+						fm = doformat(0,ep[1]);
 					} else {
 						fm = ep[1];
 					}
-					print("\nformula changed dat[%d,%d] from \"%s\" to %s\n\n",r,c,dat[r,c],fm);
+					if (spew) { print("\tformula changed dat[%d,%d] from \"%s\" to %s\n\n",r,c,dat[r,c],fm); }
 					dat[r,c] = fm;
-					print("%s\n",reorgtable(dat));
-					print("\n#+TBLFM: %s\n",theformula);
+					if (spew) { print("\n%s\n",reorgtable(0,dat)); }
+					if (spew) { print("\n#+TBLFM: %s\n",theformula); }
 					int64 ofmte = GLib.get_real_time();
-					print("\ntable formula edit took %f microseconds\n\n",((double) (ofmte - ofmts)));
+					if (spew) { print("\ntable formula took %f microts\n\n",(((double) (ofmte - ofmts))/1000000.0) ); }
 				}
 			}
 		}
