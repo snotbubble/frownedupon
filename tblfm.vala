@@ -422,9 +422,64 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 				if (spew) { print("%sevallisp make-string took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv(" ",pts);
 			}
+			return "ERROR: malformed make-string expression";
 		}
-		if (inner.contains("string")) { }
-		if (inner.contains("substring")) { }
+		if (inner.contains("substring")) { 
+// (substring ?a ?b ?c...)
+			if (spew) { print("%s\tsubstring...\n",tabs); }
+			inner = inner.replace("substring","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.split(" ");
+			if (pts.length > 1 && pts[0] != "") {
+				string sp = pts[0].replace("\"","").strip();
+				int si = 0;
+				if (int.try_parse(pts[1],out si)) {
+					if (pts.length > 2) {
+						int so = 0;
+						if (int.try_parse(pts[2],out so)) {
+							if (si >= 0 && so > si) {
+								sp = sp.substring(si,so);
+								int64 lspte = GLib.get_real_time();
+								if (spew) { print("%sevallisp substring took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+								return sp;
+							}
+						}
+					} else {
+						if (si >= 0) {
+							sp = sp.substring(si);
+							int64 lspte = GLib.get_real_time();
+							if (spew) { print("%sevallisp substring took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							return sp;
+						}
+					}
+				}
+			}
+			int64 lspte = GLib.get_real_time();
+			if (spew) { print("%sevallisp substring took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+			return "ERROR: malformed substring expression";
+		}
+		if (inner.contains("string")) { 
+// (string ?a ?b ?c...)
+			if (spew) { print("%s\tstring...\n",tabs); }
+			inner = inner.replace("string","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.split(" ");
+			if (pts.length > 0 && pts[0] != "") {
+				for (int h = 0; h < pts.length; h++) {
+					if (pts[h].has_prefix("?")) {
+						string hh = pts[h].replace("\"","").strip();
+						hh = hh.replace("?","");
+						pts[h] = "%s".printf(hh);
+					}
+				}
+				int64 lspte = GLib.get_real_time();
+				if (spew) { print("%sevallisp string took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+				return string.joinv(" ",pts);
+			}
+			return "ERROR: malformed string expression";
+		}
 		if (inner.contains("concat")) { 
 // (concat "s" "s")
 			if (spew) { print("%s\tconcat...\n",tabs); }
@@ -441,6 +496,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 				if (spew) { print("%sevallisp concat took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv("",pts);
 			}
+			return "ERROR: malformed concat expression";
 		}
 		if (inner.contains("downcase")) { 
 // (downcase "s")
@@ -479,6 +535,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					return "%f".printf(v);
 				}
 			}
+			return "ERROR: malformed abs expression";
 		}
 		if (inner.contains("mod")) { 
 // (mod 9 4)
@@ -510,6 +567,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					}
 				}
 			}
+			return "ERROR: malformed mod expression";
 		}
 		if (inner.contains("random")) { 
 			if (spew) { print("%s\trand...\n",tabs); }
@@ -527,11 +585,80 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					return "%d".printf(rnd.int_range(0,((int32) u)));
 				}
 			}
+			return "ERROR: malformed random expression";
 		}
-		if (inner.contains("fceiling")) { }
-		if (inner.contains("ffloor")) { }
-		if (inner.contains("fround")) { }
-		if (inner.contains("ftruncate")) { }
+		if (inner.contains("ceiling")) { 
+// (ceiling 1.5)
+			if (spew) { print("%s\tceiling...\n",tabs); }
+			inner = inner.replace("ceiling","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.ceil(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp ceiling took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed ceiling expression";
+		}
+		if (inner.contains("floor")) { 
+// (floor 1.5)
+			if (spew) { print("%s\tfloor...\n",tabs); }
+			inner = inner.replace("floor","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.floor(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp floor took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed floor expression";
+		}
+		if (inner.contains("round")) { 
+// (round 1.5)
+			if (spew) { print("%s\tround...\n",tabs); }
+			inner = inner.replace("round","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.round(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp round took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed round expression";
+		}
+		if (inner.contains("truncate")) { 
+// (truncate 1.5)
+			if (spew) { print("%s\ttruncate...\n",tabs); }
+			inner = inner.replace("truncate","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.trunc(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp truncate took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed truncate expression";
+		}
 		if (inner.contains("min")) { 
 // (min 1 2 3...)
 			if (spew) { print("%s\tmin...\n",tabs); }
@@ -553,6 +680,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					return "%f".printf(v);
 				}
 			}
+			return "ERROR: malformed min expression";
 		}
 		if (inner.contains("max")) { 
 // (max 1 2 3...)
@@ -575,17 +703,215 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					return "%f".printf(v);
 				}
 			}
+			return "ERROR: malformed max expression";
 		}
-		if (inner.contains("exp")) { }
-		if (inner.contains("log")) { }
-		if (inner.contains("sin")) { }
-		if (inner.contains("cos")) { }
-		if (inner.contains("tan")) { }
-		if (inner.contains("asin")) { }
-		if (inner.contains("acos")) { }
-		if (inner.contains("atan")) { }
-		if (inner.contains("sqrt")) { }
-		if (inner.contains("float-pi")) { }
+		if (inner.contains("expt")) { 
+// (expt 2.0 1.2)
+			if (spew) { print("%s\texpt...\n",tabs); }
+			inner = inner.replace("expt","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length > 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					for (int h = 1; h < pts.length; h++) {
+						double j = 0.0;
+						if (double.try_parse(pts[h],out j)) {
+							v = Math.pow(v,j);
+							int64 lspte = GLib.get_real_time();
+							if (spew) { print("%sevallisp expt took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							return "%f".printf(v);
+						}
+					}
+				}
+			}
+			return "ERROR: malformed expt (pow) expression";
+		}
+		if (inner.contains("exp")) { 
+// (exp 1.5)
+			if (spew) { print("%s\texp...\n",tabs); }
+			inner = inner.replace("exp","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.exp(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp exp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed exp expression";
+		}
+		if (inner.contains("log")) { 
+// (log 1.5)
+			if (spew) { print("%s\tlog...\n",tabs); }
+			inner = inner.replace("log","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.log(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp log took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed log expression";
+		}
+		if (inner.contains("asin")) { 
+// (asin 1.5)
+			if (spew) { print("%s\tasin...\n",tabs); }
+			inner = inner.replace("asin","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.asin(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp asin took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed asin expression";
+		}
+		if (inner.contains("acos")) { 
+// (acos 1.5)
+			if (spew) { print("%s\tacos...\n",tabs); }
+			inner = inner.replace("acos","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.acos(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp acos took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed acos expression";
+		}
+		if (inner.contains("atan")) { 
+// (atan 1.5)
+			if (spew) { print("%s\tatan...\n",tabs); }
+			inner = inner.replace("atan","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.atan(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp atan took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed atan expression";
+		}
+		if (inner.contains("sin")) { 
+// (sin 1.5)
+			if (spew) { print("%s\tsin...\n",tabs); }
+			inner = inner.replace("sin","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.sin(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp sin took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed sin expression";
+		}
+		if (inner.contains("cos")) { 
+// (cos 1.5)
+			if (spew) { print("%s\tcos...\n",tabs); }
+			inner = inner.replace("cos","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.cos(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp cos took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed cos expression";
+		}
+		if (inner.contains("tan")) { 
+// (tan 1.5)
+			if (spew) { print("%s\ttan...\n",tabs); }
+			inner = inner.replace("tan","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.tan(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp tan took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed tan expression";
+		}
+		if (inner.contains("sqrt")) { 
+// (sqrt 1.5)
+			if (spew) { print("%s\tsqrt...\n",tabs); }
+			inner = inner.replace("sqrt","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1 && pts[0] != "") {
+				double v = 0.0;
+				if (double.try_parse(pts[0], out v)) {
+					v = Math.sqrt(v);
+					int64 lspte = GLib.get_real_time();
+					if (spew) { print("%sevallisp sqrt took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%f".printf(v);
+				}
+			}
+			return "ERROR: malformed sqrt expression";
+		}
+		if (inner.contains("float-pi")) { 
+// (float-pi)
+			if (spew) { print("%s\tfloat-pi...\n",tabs); }
+			inner = inner.replace("float-pi","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			double v = Math.PI;
+			int64 lspte = GLib.get_real_time();
+			if (spew) { print("%sevallisp PI took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+			return "%f".printf(v);
+		}
+		if (inner.contains("float-e")) { 
+// (float-e)
+			if (spew) { print("%s\tfloat-e...\n",tabs); }
+			inner = inner.replace("float-e","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			double v = Math.E;
+			int64 lspte = GLib.get_real_time();
+			if (spew) { print("%sevallisp E took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+			return "%f".printf(v);
+		}
 	}
 	int64 lspte = GLib.get_real_time();
 	if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
