@@ -1,9 +1,14 @@
 // parse and run org tblfm expressions
 // by c.p.brown, 2023
 //
-// todo next: handle whole row/col formulae, then finish elisp functions
+// todo next: finish elisp functions
 
 bool spew;
+int imod (int a, int b) {
+	if (a >= 0) { return (a % b); }
+	if (a >= -b) { return (a + b); }
+	return ((a % b) + b) % b;
+}
 string[,] orgtodat (int ind, string org) {
 	int64 odtts = GLib.get_real_time();
 	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
@@ -93,7 +98,7 @@ string reorgtable (int ind, string[,] dat) {
 	return o;
 }
 // TODO: handle pre-trimmed input...
-int getrefindex (int ind, string r, string[,] dat) {
+int getrefindex (int ind, int myi, string r, string[,] dat) {
 	int64 idxts = GLib.get_real_time();
 	string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 	int o = 0;
@@ -105,8 +110,8 @@ int getrefindex (int ind, string r, string[,] dat) {
 		if (oo > 0) {
 			s = s.substring(0,oo);
 			switch (s.get_char(0)) {
-				case '>': if (spew) { print("%s\tget prev ref (>)...\n",tabs); } o = (dat.length[0] - (s.split(">").length - 1)); break;
-				case '<': if (spew) { print("%s\tget next ref (<)...\n",tabs); } o = s.split("<").length; break;
+				case '>': if (spew) { print("%s\tget prev ref (>)...\n",tabs); } o = (myi - (s.split(">").length - 1)); break;
+				case '<': if (spew) { print("%s\tget next ref (<)...\n",tabs); } o = (myi + (s.split("<").length - 1)); break;
 				case 'I': 
 					if (spew) { print("%s\tget hline ref (I)...\n",tabs); }
 					int qq = 0; 
@@ -196,14 +201,14 @@ string replacerefs (int ind, int myr, int myc, string inner, string[,] tbldat) {
 						string cs = t.substring((h+1));
 						//print("\tevallisp: \t\tcs = %s\n",cs);
 						rc[1] = h;
-						c = getrefindex((ind + 1),cs, tbldat);
+						c = getrefindex((ind + 1),myc,cs, tbldat);
 						//print("\tevallisp: \t\tc = %d\n",c);
 					}
 					if (t[h] == '@') {
 						string rs = t.substring((h + 1));
 						//print("\tevallisp: \t\trs = %s\n",rs);
 						rc[0] = h;
-						r = getrefindex((ind + 1),rs, tbldat);
+						r = getrefindex((ind + 1),myr,rs, tbldat);
 						//print("\tevallisp: \t\tr = %d\n",r);
 					}
 				}
@@ -369,7 +374,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 							n += 1;
 						} else { 
 							int64 lspte = GLib.get_real_time();
-							if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							if (spew) { print("%sevallisp format took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 							return "ERROR: format arg %d not an int".printf(n); 
 						}
 					}
@@ -380,7 +385,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 							n += 1;
 						} else { 
 							int64 lspte = GLib.get_real_time();
-							if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+							if (spew) { print("%sevallisp format took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 							return "ERROR: format arg %d not an int".printf(n); 
 						}
 					}
@@ -392,7 +397,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					y += 1;
 				}
 				int64 lspte = GLib.get_real_time();
-				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+				if (spew) { print("%sevallisp format took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return k[0];
 			}
 		}
@@ -414,7 +419,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					docount = int.try_parse(hh,out ic);
 				}
 				int64 lspte = GLib.get_real_time();
-				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+				if (spew) { print("%sevallisp make-string took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv(" ",pts);
 			}
 		}
@@ -433,7 +438,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 					pts[h] = hh;
 				}
 				int64 lspte = GLib.get_real_time();
-				if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+				if (spew) { print("%sevallisp concat took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 				return string.joinv("",pts);
 			}
 		}
@@ -444,7 +449,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
 			int64 lspte = GLib.get_real_time();
-			if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+			if (spew) { print("%sevallisp downcase took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 			return inner.down(); 
 		}
 		if (inner.contains("upcase")) { 
@@ -454,7 +459,7 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 			inner = inner.replace("(","");
 			inner = inner.replace(")","").strip();
 			int64 lspte = GLib.get_real_time();
-			if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+			if (spew) { print("%sevallisp upcase took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 			return inner.up(); 
 		}
 // number
@@ -470,13 +475,59 @@ string evallisp (int ind, int myr, int myc, string instr, string[,] tbldat) {
 				if (double.try_parse(pts[0], out v)) {
 					v = v.abs();
 					int64 lspte = GLib.get_real_time();
-					if (spew) { print("%sevallisp took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					if (spew) { print("%sevallisp abs took %f microseconds\n",tabs,((double) (lspte - lspts)));}
 					return "%f".printf(v);
 				}
 			}
 		}
-		if (inner.contains("mod")) { }
-		if (inner.contains("random")) { }
+		if (inner.contains("mod")) { 
+// (mod 9 4)
+			if (spew) { print("%s\tmod...\n",tabs); }
+			inner = inner.replace("mod","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 2 && pts[0] != "") {
+				double uu = 0.0;
+				if (double.try_parse(pts[0],out uu)) {
+					double vv = 0.0;
+					if (double.try_parse(pts[1],out(vv))) {
+						if (spew) { print("%s\tfmod(%f,%f)\n",tabs,uu,vv); }
+						uu = Math.fmod(uu,vv);
+						int64 lspte = GLib.get_real_time();
+						if (spew) { print("%sevallisp fmod took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+						return "%f".printf(uu);
+					}
+				}
+				int u = 0;
+				if (int.try_parse(pts[0], out u)) {
+					int v = 0;
+					if (int.try_parse(pts[1], out v)) {
+						u = imod(u,v);
+						int64 lspte = GLib.get_real_time();
+						if (spew) { print("%sevallisp mod took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+						return "%d".printf(u);
+					}
+				}
+			}
+		}
+		if (inner.contains("random")) { 
+			if (spew) { print("%s\trand...\n",tabs); }
+			inner = inner.replace("random","");
+			inner = inner.replace("(","");
+			inner = inner.replace(")","").strip();
+			string[] pts = inner.strip().split(" ");
+			if (pts.length == 1) {
+				int u = 0;
+				if (int.try_parse(pts[0],out u)) {
+					GLib.Rand rnd = new GLib.Rand();
+					int64 lspte = GLib.get_real_time();
+					rnd.set_seed(((int32) lspte));
+					if (spew) { print("%sevallisp random took %f microseconds\n",tabs,((double) (lspte - lspts)));}
+					return "%d".printf(rnd.int_range(0,((int32) u)));
+				}
+			}
+		}
 		if (inner.contains("fceiling")) { }
 		if (inner.contains("ffloor")) { }
 		if (inner.contains("fround")) { }
@@ -576,12 +627,12 @@ double dosum (int ind, int myr, int myc, string inner, string[,] tbldat) {
 							if (t[h] == '$') { 
 								string cs = t.substring((h+1));
 								rc[1] = h;
-								c = getrefindex((ind + 1),cs, tbldat);
+								c = getrefindex((ind + 1),myc,cs, tbldat);
 							}
 							if (t[h] == '@') {
 								string rs = t.substring((h + 1));
 								rc[0] = h;
-								r = getrefindex((ind + 1),rs, tbldat);
+								r = getrefindex((ind + 1),myr,rs, tbldat);
 							}
 						}
 						y += 1;
@@ -723,7 +774,7 @@ void main() {
 |        |       |        |          |""";
 
 	dat = orgtodat(0,orgtbl);
-	string theformula = "@>$4=((vsum(@1$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)\n@1$2='(concat \"2_\" @1$2)\n@1$3 = '(abs @4$4) + '(org-sbe \"x\")\n$4=($1*$2);%.2f\n@1='(concat \"[\" @1 \"]\")";
+	string theformula = "@>$4=((vsum(@1$4..@>>>$4) / 1000.0 ) *  20.0);%.2f\n@>$2='(format \"%s_%f\" (downcase @1$2) @>>>$1)\n@>$1='(min @4$2 (max @3 @5))\n@>$3=@4$1-((@4$3 / @4$4) + 0.5)\n@1$2='(concat \"2_\" @1$2)\n@1$3 = '(abs @4$4) + '(org-sbe \"x\")\n$4=($1*$2);%.2f\n@1='(concat \"[\" @1 \"]\")\n@3$3='(random 100)\n@4$3='(mod $< 10)";
 	//string e = theformula;
 	// we need 9.0846 from the above
 	string[] xprs = theformula.split("\n");
@@ -752,12 +803,12 @@ void main() {
 				print("index_of @ is %d, index_of $ is %d\n",ii,oo);
 				if (ii > -1) {
 					string rs = ep[0].substring((ii+1));
-					r = getrefindex(2,rs,dat);
+					r = getrefindex(2,dat.length[0],rs,dat);
 					if (spew) { print("\ttarget row: %d (%s)\n",r,rs); }
 				}
 				if (oo > -1) {
 					string cs = ep[0].substring((oo + 1));
-					c = getrefindex(2,cs,dat);
+					c = getrefindex(2,dat.length[1],cs,dat);
 					if (spew) { print("\ttarget col: %d, (%s)\n",c,cs); }
 				}
 // target is valid
