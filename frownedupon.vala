@@ -3,7 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: gtk5 css futureproofing...
+// status: outliner selecting, tagging & filtering...
 
 
 using GLib;
