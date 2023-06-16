@@ -148,6 +148,8 @@ string sbfld;
 string sbshd;
 string sblow;
 string sbent;
+string sbgut;
+string sbdim;
 
 int imod (int a, int b) {
 	if (a >= 0) { return (a % b); }
@@ -494,6 +496,13 @@ void crosslinkio (int ind) {
 			inputs[j].obuff = inputs[j].source.id;
 		}
 	}
+}
+
+int findtodoindexbyid (uint n, todo[] h) {
+	for (int q = 0; q < h.length; q++) {
+		if (h[q].id == n) { return q; }
+	}
+	return h.length;
 }
 
 int findtodoindexbyname (string n, todo[] h) {
@@ -4569,11 +4578,6 @@ public class ElementBox : Gtk.Box {
 			if (elements[idx].outputs.length > 0) {
 				elmoutputbox = new Gtk.Box(VERTICAL,8);
 				elmoutputcontrolbox = new Gtk.Box(HORIZONTAL,0);
-				//elmoutputlistbox = new Gtk.Box(VERTICAL,0);
-				//elmoutputlistbox.margin_top = 0;
-				//elmoutputlistbox.margin_bottom = 0;
-				//elmoutputlistbox.margin_start = 0;
-				//elmoutputlistbox.margin_end = 0;
 				elmoutputlabel = new Gtk.Label("output");
 				elmoutputlabel.set_css_classes ( { "label" } );
 				elmoutputlabel.margin_start = 8;
@@ -4581,7 +4585,6 @@ public class ElementBox : Gtk.Box {
 				elmoutputlabel.margin_bottom = 8;
 				elmoutputcontrolbox.append(elmoutputlabel);
 				elmoutputbox.append(elmoutputcontrolbox);
-				//elmoutputbox.append(elmoutputlistbox);
 				elmoutputcontrolbox.margin_top = 0;
 				elmoutputcontrolbox.margin_bottom = 0;
 				elmoutputcontrolbox.margin_start = 0;
@@ -4592,7 +4595,6 @@ public class ElementBox : Gtk.Box {
 					OutputRow elmoutputrow = new OutputRow(idx,elements[idx].outputs[i].index);
 					elmoutputbox.append(elmoutputrow);
 				}
-				//elmoutputlistbox.hexpand = true;
 				elmoutputbox.hexpand = true;
 				elmoutputbox.margin_top = 4;
 				elmoutputbox.margin_bottom = 0;
@@ -4653,7 +4655,7 @@ public class ElementBox : Gtk.Box {
 }
 
 public class Outliner : Gtk.Box {
-	private Gtk.Box outlinerscrollbox;
+	public Gtk.Box outlinerscrollbox;
 	private Gtk.ScrolledWindow outlinerscroll;
 	private Gtk.Box outlinercontrolbox;
 	private Gtk.Box outlinersearchbox;
@@ -4713,43 +4715,57 @@ public class Outliner : Gtk.Box {
 }
 
 public class HeadingBox : Gtk.Box {
-	private Gtk.Box hbox;
+	public Gtk.Box hbox;
 	private Gtk.Entry headingname;
 	private Gtk.Box headinggrip;
 	private Gtk.Label headingdot;
-	private Gtk.MenuButton headingtodobutton;
-	private Gtk.Popover headingtodopop;
-	private Gtk.Box headingtodopopbox;
-	private Gtk.ScrolledWindow headingtodopopscroll;
-	private Gtk.GestureClick headingtodobuttonclick;
-	private Gtk.MenuButton headingprioritybutton;
-	private Gtk.Popover headingprioritypop;
-	private Gtk.Box headingprioritypopbox;
-	private Gtk.ScrolledWindow headingprioritypopscroll;
-	private Gtk.GestureClick headingprioritybuttonclick;
-	private Gtk.MenuButton headingtagbutton;
-	private Gtk.Popover headingtagpop;
-	private Gtk.Box headingtagpopbox;
-	private Gtk.ScrolledWindow headingtagpopscroll;
-	private Gtk.GestureClick headingtagbuttonclick;
-	private Gtk.Label headingtaglist;
+	public Gtk.Box headingtodobox;
+	public Gtk.Box headingprioritybox;
+	public Gtk.Box headingtaglistbox;
 	private Gtk.ToggleButton headingexpander;
 	private Pango.Layout headingnamelayout;
-	//private Gtk.GestureClick thisclick;
-	//public Gtk.GestureSingle thisclick;
 	public int stars;
 	public uint headingid;
 	public int index;
 	public bool selected;
+	public void settodo (uint tdo) {
+		string s = todos[(findtodoindexbyid(tdo,todos))].name;
+		Gtk.Button todobtn = new Gtk.Button.with_label(s);
+		todobtn.css_classes = { "tagbutton" };
+		todobtn.clicked.connect (() => {
+			doup = false;
+			int hb = headingboxes.length;
+			headingboxes = {};
+			Outliner myoutliner = (Outliner) todobtn.get_ancestor(typeof(Outliner));
+			while (myoutliner.outlinerscrollbox.get_first_child() != null) {
+				myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
+			}
+			if (hb != headings.length) {
+				for (int hd = 0; hd < headings.length; hd++) {
+					headingboxes += new HeadingBox(hd);
+				}
+			} else {
+				for (int hd = 0; hd < headings.length; hd++) {
+					if (findtodoidbyname(todobtn.label, todos) == headings[hd].todo) {
+						headingboxes += new HeadingBox(hd);
+					}
+				}
+			}
+			for (int b = 0; b < headingboxes.length; b++) {
+				myoutliner.outlinerscrollbox.append(headingboxes[b]);
+			}
+			doup = true;
+		});
+		headingtodobox.append(todobtn);
+	}
 	public HeadingBox (int idx) {
 		print("\nHEADINGBOX: started (idx %d) of %d.\n",idx,(headings.length - 1));
-		
 		if (idx < headings.length) {
+			selected = false;
 			print("HEADINGBOX:\tmaking heading for: %s\n",headings[idx].name);
 			stars = headings[idx].stars;
 			headingid = headings[idx].id;
 			index = idx;
-
 			hbox = new Gtk.Box(HORIZONTAL,4);
 			headinggrip = new Gtk.Box(HORIZONTAL,4);
 			headinggrip.hexpand = true;
@@ -4776,156 +4792,6 @@ public class HeadingBox : Gtk.Box {
 					}
 				}
 			});
-			print("HEADINGBOX:\tmaking heading priority ui...\n");
-			headingprioritybutton = new Gtk.MenuButton();
-			headingprioritybutton.set_label("");
-			headingprioritybutton.set_always_show_arrow(false);
-			headingprioritybutton.set_icon_name("zoom-original");
-			headingprioritypop = new Gtk.Popover();
-			headingprioritypopbox = new Gtk.Box(VERTICAL,0);
-			headingprioritypopscroll = new Gtk.ScrolledWindow();
-			headingprioritypopbox.margin_top = 2;
-			headingprioritypopbox.margin_end = 2;
-			headingprioritypopbox.margin_start = 2;
-			headingprioritypopbox.margin_bottom = 2;
-			headingprioritypopscroll.set_child(headingprioritypopbox);
-			headingprioritypop.set_child(headingprioritypopscroll);
-			headingprioritypop.width_request = 160;
-			headingprioritypop.height_request = 240;
-			headingprioritybutton.popover = headingprioritypop;
-			headingprioritybuttonclick = new Gtk.GestureClick();
-			headingprioritybutton.add_controller(headingprioritybuttonclick);
-			headingprioritypop.set_css_classes( { "popup" } );
-			headingprioritybutton.set_css_classes( { "button" } );
-			headingprioritybuttonclick.pressed.connect(() => {
-				if (todos.length > 0) {
-					if (doup) {
-						doup = false;
-						while (headingprioritypopbox.get_first_child() != null) {
-							headingprioritypopbox.remove(headingprioritypopbox.get_first_child());
-						}
-						for(int p = 0; p < priorities.length; p++) {
-							Gtk.Button tduh = new Gtk.Button.with_label(priorities[p].name);
-							tduh.set_css_classes( { "button" } );
-							headingprioritypopbox.append(tduh);
-							tduh.clicked.connect((nuh) => {
-								uint tdx = findpriorityidbyname(nuh.label, priorities);
-								if (tdx != -1) { 
-									headings[idx].priority = tdx;
-									addheadertoprioritiesbyindex(findpriorityindexbyname(nuh.label,priorities),headings[idx].id);
-									headingprioritybutton.set_label(nuh.label);
-								} else { print("%s doesn't match any priority names...\n",nuh.label); }
-								headingprioritypop.popdown();
-							});
-						}
-						doup = true;
-					}
-				}
-			});
-			print("HEADINGBOX:\tmaking heading todo ui...\n");
-			headingtodobutton = new Gtk.MenuButton();
-			headingtodobutton.set_label("");
-			headingtodobutton.set_always_show_arrow(false);
-			headingtodobutton.set_icon_name("object-select");
-			headingtodopop = new Gtk.Popover();
-			headingtodopopbox = new Gtk.Box(VERTICAL,0);
-			headingtodopopscroll = new Gtk.ScrolledWindow();
-			headingtodopopbox.margin_top = 2;
-			headingtodopopbox.margin_end = 2;
-			headingtodopopbox.margin_start = 2;
-			headingtodopopbox.margin_bottom = 2;
-			headingtodopopscroll.set_child(headingtodopopbox);
-			headingtodopop.set_child(headingtodopopscroll);
-			headingtodopop.width_request = 160;
-			headingtodopop.height_request = 240;
-			headingtodobutton.popover = headingtodopop;
-			headingtodobuttonclick = new Gtk.GestureClick();
-			headingtodobutton.add_controller(headingtodobuttonclick);
-			headingtodopop.set_css_classes( { "popup" } );
-			headingtodobutton.set_css_classes( { "button" } );
-			headingtodobuttonclick.pressed.connect(() => {
-				if (todos.length > 0) {
-					if (doup) {
-						doup = false;
-						while (headingtodopopbox.get_first_child() != null) {
-							headingtodopopbox.remove(headingtodopopbox.get_first_child());
-						}
-						for(int t = 0; t < todos.length; t++) {
-							Gtk.Button pduh = new Gtk.Button.with_label(todos[t].name);
-							pduh.set_css_classes( { "button" } );
-							headingtodopopbox.append(pduh);
-							pduh.clicked.connect((nuh) => {
-								uint tdx = findtodoidbyname(nuh.label, todos);
-								if (tdx != -1) { 
-									headings[idx].todo = tdx;
-									addheadertotodosbyindex(findtodoindexbyname(nuh.label,todos),headings[idx].id);
-									headingtodobutton.set_label(nuh.label);
-								} else { print("%s doesn't match any todo names...\n",nuh.label); }
-								headingtodopop.popdown();
-							});
-						}
-						doup = true;
-					}
-				}
-			});
-			print("HEADINGBOX:\tmaking heading tag ui...\n");
-			headingtaglist = new Gtk.Label("");
-			headingtaglist.set_css_classes( { "label" } );
-			headingtagbutton = new Gtk.MenuButton();
-			headingtagbutton.set_label("");
-			headingtagbutton.set_always_show_arrow(false);
-			headingtagbutton.set_icon_name("preferences-desktop-locale");
-			headingtagpop = new Gtk.Popover();
-			headingtagpopbox = new Gtk.Box(VERTICAL,0);
-			headingtagpopscroll = new Gtk.ScrolledWindow();
-			headingtagpopbox.margin_top = 2;
-			headingtagpopbox.margin_end = 2;
-			headingtagpopbox.margin_start = 2;
-			headingtagpopbox.margin_bottom = 2;
-			headingtagpopscroll.set_child(headingtagpopbox);
-			headingtagpop.set_child(headingtagpopscroll);
-// TAG: adapt size to content
-			headingtagpop.width_request = 160;
-			headingtagpop.height_request = 240;
-			headingtagbutton.popover = headingtagpop;
-			headingtagbuttonclick = new Gtk.GestureClick();
-			headingtagbutton.add_controller(headingtagbuttonclick);
-			headingtagpop.set_css_classes( { "popup" } );
-			headingtagbutton.set_css_classes( { "button" } );
-			print("HEADINGBOX:\tmaking heading tag.pressed fn...\n");
-			headingtagbuttonclick.pressed.connect(() => {
-				if (tags.length > 0) {
-					if (doup) {
-						doup = false;
-						while (headingtagpopbox.get_first_child() != null) {
-							headingtagpopbox.remove(headingtagpopbox.get_first_child());
-						}
-						for(int t = 0; t < tags.length; t++) {
-							Gtk.Button pduh = new Gtk.Button.with_label(tags[t].name);
-							pduh.set_css_classes( { "button" } );
-							headingtagpopbox.append(pduh);
-							pduh.clicked.connect((nuh) => {
-								uint tdx = findtagidbyname(nuh.label, tags);
-								if (tdx != -1) { 
-									toggleheadertagbyindex(idx,findtagidbyname(nuh.label, tags));
-									addheadertotagsbyindex(findtagindexbyname(nuh.label,tags),idx);
-									string[] htaglist = {};
-									for (int g = 0; g < headings[idx].tags.length; g++) {
-										string gn = findtagnamebyid(headings[idx].tags[g], tags);
-										if (gn.length > 0) { htaglist += gn; }
-									}
-									headingtaglist.set_text("");
-									if (htaglist.length > 0) {
-										headingtaglist.set_text(":%s:".printf(string.joinv(":",htaglist)));
-									}
-								} else { print("%s doesn't match any tag names...\n",nuh.label); }
-								headingtagpop.popdown();
-							});
-						}
-						doup = true;
-					}
-				}
-			});
 			headingexpander = new Gtk.ToggleButton();
 			headingexpander.icon_name = "go-down";
 			headingexpander.set_css_classes( { "button" } );
@@ -4936,41 +4802,52 @@ public class HeadingBox : Gtk.Box {
 					headingexpander.icon_name = "go-down";
 				}
 			});
-			print("HEADINGBOX:\tassembling ui...\n");
+
+			headingtodobox = new Gtk.Box(HORIZONTAL,0);
+			headingprioritybox = new Gtk.Box(HORIZONTAL,0);
+			headingtaglistbox = new Gtk.Box(HORIZONTAL,0);
+			if (headings[idx].todo > 0) {
+				settodo(headings[idx].todo);
+			}
+
+			if (spew) { print("HEADINGBOX:\tassembling ui...\n"); }
 			hbox.append(headingdot);
+			hbox.append(headingtodobox);
+			hbox.append(headingprioritybox);
 			hbox.append(headingname);
 			hbox.append(headinggrip);
-			hbox.append(headingtaglist);
-			hbox.append(headingtagbutton);
-			hbox.append(headingtodobutton);
-			hbox.append(headingprioritybutton);
+			hbox.append(headingtaglistbox);
 			hbox.append(headingexpander);
+
 			hbox.margin_top = 4;
 			hbox.margin_start = 4;
 			hbox.margin_end = 4;
 			hbox.margin_bottom = 4;
+// name
 			headingname.text = headings[idx].name;
 			headingnamelayout.set_text(headings[idx].name, -1);
 			int pxw, pxh = 0;
 			headingnamelayout.get_pixel_size(out pxw, out pxh);
 			headingname.width_request = pxw + 30;
+
 			this.margin_top = 2;
 			this.margin_start = (30 * (stars - 1)) + 10;
 			this.margin_end = 40;
 			this.margin_bottom = 2;
-
 			this.css_classes = { "heading" };
 			this.append(hbox);
 			Gtk.GestureClick thisclick = new Gtk.GestureClick();
 			this.add_controller(thisclick);
 			thisclick.begin.connect(() => {
+				int hh = getheadingindexbyid(headingid);
+				print("HEADINGBOX: selecting headingbox[%d], heading[%d] (%s)...\n",index,hh,headings[hh].name);
 				Gdk.Event e = thisclick.get_current_event();
 				Gdk.ModifierType t = e.get_modifier_state();
 // this headingbox outlinerscrollbox outlinerscroll outliner
 //          1              2               3           4
 				print("HEADINGBOX: setting selection css...\n");
 				this.selected = true;
-				Outliner myparent = (Outliner) this.parent.parent.parent.parent;
+				Outliner myparent = (Outliner) this.get_ancestor(typeof(Outliner));
 				print("HEADINGBOX: checking control_mask : %s\n", t.to_string());
 				if (t == CONTROL_MASK) {
 					print("HEADINGBOX: CTRL+CLICK...\n");
@@ -4985,21 +4862,30 @@ public class HeadingBox : Gtk.Box {
 				} else {
 					print("HEADINGBOX: \tclearing selection css...\n");
 					foreach (int h in myparent.selection) { 
-						headingboxes[h].set_css_classes( { "heading" } );
-						headingboxes[h].headingname.set_css_classes({"headingname"});
+						for (int u = 0; u < headingboxes.length; u++) {
+							if (headingboxes[u].index == h) {
+								headingboxes[u].set_css_classes( { "heading" } );
+								headingboxes[u].headingname.set_css_classes({"headingname"});
+								headingboxes[u].selected = false;
+							}
+						}
 					}
 					myparent.selection = {index};
 				}
 				print("HEADINGBOX: \tapplying selection css...\n");
 				foreach (int h in myparent.selection) {
-					print("HEADINGBOX: selected heading : %d %s\n",h,headings[h].name);
-					headingboxes[h].set_css_classes( { "heading", "selected" } );
-					headingboxes[h].headingname.set_css_classes({"headingname", "selected"});
+					for (int u = 0; u < headingboxes.length; u++) {
+						if (headingboxes[u].index == h) {
+							print("HEADINGBOX: selected heading : %d %s\n",h,headings[u].name);
+							headingboxes[u].set_css_classes( { "heading", "selected" } );
+							headingboxes[u].headingname.set_css_classes({"headingname", "selected"});
+						}
+					}
 				}
 				if (headingid >= 0) {
 					sel = headingid;
-					hidx = index;
-					print("HEADINGBOX: selected headings[%d] %s...\n",hidx,headings[hidx].name);
+					hidx = hh;
+					print("HEADINGBOX: selected headings[%d] %s...\n",hidx,headings[hh].name);
 // check pannelboxes for parameter panes, update them if not pinned...
 // ModalBox/box(content)/ParamBox
 // vdiv/ModalBox/content/Outliner/outlinerscroll/outlinerscrollbox/this
@@ -5162,16 +5048,168 @@ public class ModalBox : Gtk.Box {
 
 
 		modalboxpanectrl = new Gtk.Box(HORIZONTAL,0);
-		
 		if (this.contenttype == "outliner") {
-			print("HEADINGBOX:\tmaking heading priority ui...\n");
-			headingprioritybutton = new Gtk.MenuButton();
+
+// tags
+			if (spew) { print("HEADINGBOX:\tmaking heading tag ui...\n"); }
+
+			Gtk.MenuButton 		headingtagbutton 		= new Gtk.MenuButton();
+			Gtk.Popover 			headingtagpop 			= new Gtk.Popover();
+			Gtk.Box 				headingtagpopbox 		= new Gtk.Box(VERTICAL,0);
+			Gtk.ScrolledWindow 	headingtagpopscroll 	= new Gtk.ScrolledWindow();
+			Gtk.GestureClick 		headingtagbuttonclick 	= new Gtk.GestureClick();
+
+			headingtagbutton.set_label("");
+			headingtagbutton.set_always_show_arrow(false);
+			headingtagbutton.set_icon_name("preferences-desktop-locale");
+			headingtagpopbox.margin_top = 2;
+			headingtagpopbox.margin_end = 2;
+			headingtagpopbox.margin_start = 2;
+			headingtagpopbox.margin_bottom = 2;
+			headingtagpopscroll.set_child(headingtagpopbox);
+			headingtagpop.set_child(headingtagpopscroll);
+			headingtagpop.width_request = 160;
+			headingtagpop.height_request = 240;
+			headingtagbutton.popover = headingtagpop;
+			headingtagbutton.add_controller(headingtagbuttonclick);
+			headingtagpop.set_css_classes( { "popup" } );
+			headingtagbutton.get_first_child().set_css_classes( { "button" } );
+
+			headingtagbuttonclick.pressed.connect(() => {
+				if (spew) { print("HEADINGBOX:\tmaking heading tag.pressed fn...\n"); }
+				if (tags.length > 0) {
+					if (doup) {
+						doup = false;
+						while (headingtagpopbox.get_first_child() != null) {
+							headingtagpopbox.remove(headingtagpopbox.get_first_child());
+						}
+						for(int t = 0; t < tags.length; t++) {
+							Gtk.Button pduh = new Gtk.Button.with_label(tags[t].name);
+							pduh.css_classes = { "button" };
+							headingtagpopbox.append(pduh);
+							pduh.clicked.connect((nuh) => {
+								uint tdx = findtagidbyname(nuh.label, tags);
+								if (tdx != -1) {
+									for (int h = 0; h < headingboxes.length; h++) {
+										if (headingboxes[h].selected) {
+											int hidx = headingboxes[h].index;
+											toggleheadertagbyindex(hidx,findtagidbyname(nuh.label, tags));
+											addheadertotagsbyindex(findtagindexbyname(nuh.label,tags),hidx);
+											string[] htaglist = {};
+											for (int g = 0; g < headings[hidx].tags.length; g++) {
+												string gn = findtagnamebyid(headings[hidx].tags[g], tags);
+												if (gn.length > 0) { htaglist += gn; }
+											}
+											while (headingboxes[h].headingtaglistbox.get_first_child() != null) {
+												headingboxes[h].headingtaglistbox.remove(headingboxes[h].headingtaglistbox.get_first_child());
+											}
+											if (htaglist.length > 0) {
+												for (int g = 0; g < htaglist.length; g++) {
+													Gtk.Button tagbtn = new Gtk.Button.with_label(htaglist[g]);
+													tagbtn.clicked.connect (() => {
+														doup = false;
+														headingboxes = {};
+														Outliner myoutliner = (Outliner) tagbtn.get_ancestor(typeof(Outliner));
+														for (int hd = 0; hd < headings.length; hd++) {
+															if (findtagidbyname(tagbtn.label, tags) in headings[hd].tags) {
+																headingboxes += new HeadingBox(hd);
+															}
+														}
+														while (myoutliner.outlinerscrollbox.get_first_child() != null) {
+															myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
+														}
+														for (int b = 0; b < headingboxes.length; b++) {
+															myoutliner.outlinerscrollbox.append(headingboxes[b]);
+														}
+														doup = true;
+													});
+													headingboxes[h].headingtaglistbox.append(tagbtn);
+												}
+											}
+										}
+									}
+								} else { print("%s doesn't match any tag names...\n",nuh.label); }
+								headingtagpop.popdown();
+							});
+						}
+						doup = true;
+					}
+				}
+			});
+
+// todo
+			if (spew) { print("HEADINGBOX:\tmaking heading todo ui...\n"); }
+
+			Gtk.MenuButton 		headingtodobutton 			= new Gtk.MenuButton();
+			Gtk.Popover 			headingtodopop 			= new Gtk.Popover();
+			Gtk.Box 				headingtodopopbox 			= new Gtk.Box(VERTICAL,0);
+			Gtk.ScrolledWindow 	headingtodopopscroll 		= new Gtk.ScrolledWindow();
+			Gtk.GestureClick 		headingtodobuttonclick 	= new Gtk.GestureClick();
+
+			headingtodobutton.set_label("");
+			headingtodobutton.set_always_show_arrow(false);
+			headingtodobutton.set_icon_name("object-select");
+			headingtodopopbox.margin_top = 2;
+			headingtodopopbox.margin_end = 2;
+			headingtodopopbox.margin_start = 2;
+			headingtodopopbox.margin_bottom = 2;
+			headingtodopopscroll.set_child(headingtodopopbox);
+			headingtodopop.set_child(headingtodopopscroll);
+			headingtodopop.width_request = 160;
+			headingtodopop.height_request = 240;
+			headingtodobutton.popover = headingtodopop;
+			headingtodobutton.add_controller(headingtodobuttonclick);
+			headingtodopop.css_classes = { "popup" };
+			headingtodobutton.get_first_child().css_classes = { "button" };
+			headingtodobuttonclick.pressed.connect(() => {
+				if (todos.length > 0) {
+					if (doup) {
+						doup = false;
+						while (headingtodopopbox.get_first_child() != null) {
+							headingtodopopbox.remove(headingtodopopbox.get_first_child());
+						}
+						for(int t = 0; t < todos.length; t++) {
+							Gtk.Button pduh = new Gtk.Button.with_label(todos[t].name);
+							pduh.css_classes = { "button" };
+							headingtodopopbox.append(pduh);
+							pduh.clicked.connect((nuh) => {
+								uint tdx = findtodoidbyname(nuh.label, todos);
+								if (tdx != -1) {
+									for (int h = 0; h < headingboxes.length; h++) {
+										if (headingboxes[h].selected) {
+											//Gtk.Box htdb = (Gtk.Box) headingboxes[h].headingtodobox;
+											while (headingboxes[h].headingtodobox.get_first_child() != null) {
+												headingboxes[h].headingtodobox.remove(headingboxes[h].headingtodobox.get_first_child());
+											}
+											int hidx = headingboxes[h].index;
+											if (spew) { print("selected heading: %d %s\n",hidx,headings[hidx].name); }
+											headings[hidx].todo = tdx;
+											headingboxes[h].settodo(tdx);
+											//headingboxes[h].headingtodobox.append(todobtn);
+											//htdb.append(todobtn);
+										}
+									}
+								} else { print("%s doesn't match any todo names...\n",nuh.label); }
+								headingtodopop.popdown();
+							});
+						}
+						doup = true;
+					}
+				}
+			});
+
+// priority
+			if (spew) { print("HEADINGBOX:\tmaking heading priority ui...\n"); }
+
+			Gtk.MenuButton 		headingprioritybutton 			= new Gtk.MenuButton();
+			Gtk.Popover 			headingprioritypop 			= new Gtk.Popover();
+			Gtk.Box 				headingprioritypopbox 			= new Gtk.Box(VERTICAL,0);
+			Gtk.ScrolledWindow 	headingprioritypopscroll 		= new Gtk.ScrolledWindow();
+			Gtk.GestureClick 		headingprioritybuttonclick 	= new Gtk.GestureClick();
+
 			headingprioritybutton.set_label("");
 			headingprioritybutton.set_always_show_arrow(false);
 			headingprioritybutton.set_icon_name("zoom-original");
-			headingprioritypop = new Gtk.Popover();
-			headingprioritypopbox = new Gtk.Box(VERTICAL,0);
-			headingprioritypopscroll = new Gtk.ScrolledWindow();
 			headingprioritypopbox.margin_top = 2;
 			headingprioritypopbox.margin_end = 2;
 			headingprioritypopbox.margin_start = 2;
@@ -5181,7 +5219,6 @@ public class ModalBox : Gtk.Box {
 			headingprioritypop.width_request = 160;
 			headingprioritypop.height_request = 240;
 			headingprioritybutton.popover = headingprioritypop;
-			headingprioritybuttonclick = new Gtk.GestureClick();
 			headingprioritybutton.add_controller(headingprioritybuttonclick);
 			headingprioritypop.css_classes = {"popup"};
 			headingprioritybutton.get_first_child().css_classes = {"button"};
@@ -5189,8 +5226,8 @@ public class ModalBox : Gtk.Box {
 				if (todos.length > 0) {
 					if (doup) {
 						doup = false;
-						Outliner myoutliner = (Outliner) this.content.get_first_child();
-						int[] selectedheadings = myoutliner.selection;
+						//Outliner myoutliner = (Outliner) this.content.get_first_child();
+						//int[] selectedheadings = myoutliner.selection;
 						while (headingprioritypopbox.get_first_child() != null) {
 							headingprioritypopbox.remove(headingprioritypopbox.get_first_child());
 						}
@@ -5201,9 +5238,33 @@ public class ModalBox : Gtk.Box {
 							tduh.clicked.connect((nuh) => {
 								uint tdx = findpriorityidbyname(nuh.label, priorities);
 								if (tdx != -1) { 
-									headings[idx].priority = tdx;
-									addheadertoprioritiesbyindex(findpriorityindexbyname(nuh.label,priorities),headings[idx].id);
-									headingprioritybutton.set_label(nuh.label);
+									for (int h = 0; h < headingboxes.length; h++) {
+										if (headingboxes[h].selected) {
+											while (headingboxes[h].headingprioritybox.get_first_child() != null) {
+												headingboxes[h].headingprioritybox.remove(headingboxes[h].headingprioritybox.get_first_child());
+											}
+											int hidx = headingboxes[h].index;
+											headings[hidx].priority = tdx;
+											Gtk.Button pribtn = new Gtk.Button.with_label(nuh.label);
+											pribtn.clicked.connect (() => {
+												doup = false;
+												headingboxes = {};
+												Outliner thisoutliner = (Outliner) pribtn.get_ancestor(typeof(Outliner));
+												for (int hd = 0; hd < headings.length; hd++) {
+													if (findpriorityidbyname(pribtn.label, priorities) == headings[hd].priority) {
+														headingboxes += new HeadingBox(hd);
+													}
+												}
+												while (thisoutliner.outlinerscrollbox.get_first_child() != null) {
+													thisoutliner.outlinerscrollbox.remove(thisoutliner.outlinerscrollbox.get_first_child());
+												}
+												for (int b = 0; b < headingboxes.length; b++) {
+													thisoutliner.outlinerscrollbox.append(headingboxes[b]);
+												}
+												doup = true;
+											});
+										}
+									}
 								} else { print("%s doesn't match any priority names...\n",nuh.label); }
 								headingprioritypop.popdown();
 							});
@@ -5212,7 +5273,13 @@ public class ModalBox : Gtk.Box {
 					}
 				}
 			});
+			modalboxpanectrl.append(headingtodobutton);
 			modalboxpanectrl.append(headingprioritybutton);
+			modalboxpanectrl.append(headingtagbutton);
+		} else {
+			while (modalboxpanectrl.get_first_child() != null) {
+				modalboxpanectrl.remove(modalboxpanectrl.get_first_child());
+			}
 		}
 		modalboxexpander = new Gtk.Box(HORIZONTAL,0);
 		modalboxexpander.hexpand = true;
@@ -5252,18 +5319,37 @@ public class frownwin : Gtk.ApplicationWindow {
 		string tal_hi = "#14A650FF";		// turqoise
 		string tal_lo = "#1D5233FF";
 
-		sbbkg = "#112633";	// sb blue
-		sbsel = "#50B5F2";	// selection/text
-		sblin = "#08131A";	// dark lines
-		sbgry = "#2A5F80";	// sbbkg + 30
-		sbalt = "#224C66";	// sbbkg + 20
-		sbhil = "#1D4259";	// sbbkg + 10
-		sblit = "#19394D";	// sbbkg + 5
-		sbmrk = "#153040";  // sbbkg + 2
-		sbfld = "#132C3B";	// sbbkg - 2
-		sblow = "#153040";	// sbbkg - 5
-		sbshd = "#0C1D26";	// sbbkg - 10
-		sbent = "#0E232E";	// sbbkg - 12
+		//sbbkg = "#112633";	// sb blue
+		//sblin = "#08131A";	// dark lines
+		//sbgry = "#2A5F80";	// sbbkg + 30
+		//sbalt = "#224C66";	// sbbkg + 20
+		//sbhil = "#1D4259";	// sbbkg + 10
+		//sblit = "#19394D";	// sbbkg + 5
+		//sbmrk = "#153040";  // sbbkg + 2
+		//sbfld = "#132C3B";	// sbbkg - 2
+		//sblow = "#153040";	// sbbkg - 5
+		//sbshd = "#0C1D26";	// sbbkg - 10
+		//sbent = "#0E232E";	// sbbkg - 12
+
+		sbsel = "#50B5F2"; // bg 95
+		//sbsel = "#48A2D9"; // bg 85
+		//sbsel = "#48A2D9"; // bg 75
+		sbdim = "#377CA6"; // bg 65
+		//sbsel = "#2E698C"; // bg 55
+		//sbsel = "#265673"; // bg 45
+
+		sblit = "#19394D"; // bg 30
+		sbgry = "#183547"; // bg 28
+		sbhil = "#163142"; // bg 26
+		sbalt = "#142E3D"; // bg 24
+		sbmrk = "#132A38"; // bg 22
+		sbbkg = "#112633"; // bg 20
+		sbfld = "#0F222E"; // bg 18
+		sblow = "#0E1E29"; // bg 16
+		sbgut = "#0C1B24"; // bg 14
+		sbent = "#0A171F"; // bg 12
+		sbshd = "#08131A"; // bg 10
+		sblin = "#08131A"; // bg 8
 
 		string out_hi = "#8738A1FF";		// purple
 		string out_lo = "#351C3DFF";
@@ -5273,10 +5359,19 @@ public class frownwin : Gtk.ApplicationWindow {
 		string allcss = """
 			.window {
 				border-radius: 0; 
-				border-top: 2px solid sbhil; 
-				border-left: 2px solid sbhil; 
-				border-right: 2px solid sblin; 
-				border-bottom: 2px solid sblin; 
+				border-top: 4px solid sbhil; 
+				border-left: 4px solid sbhil; 
+				border-right: 4px solid sblin; 
+				border-bottom: 4px solid sblin; 
+				background: sbbkg; 
+				color: sbsel; 
+			}
+			.iobar {
+				border-radius: 0; 
+				border-top: 0px solid sbhil; 
+				border-left: 0px solid sbhil; 
+				border-right: 0px solid sblin; 
+				border-bottom: 4px solid sblin; 
 				background: sbbkg; 
 				color: sbsel;
 			}
@@ -5314,6 +5409,12 @@ public class frownwin : Gtk.ApplicationWindow {
 				color: sbalt; 
 				font-size: 12px;
 			}
+			.tagbutton {
+				border-radius: 0; 
+				border: 0px; 
+				background: sbmrk; 
+				color: sbdim;
+			}
 			.button {
 				border-radius: 0; 
 				border-top: 2px solid sbhil; 
@@ -5343,7 +5444,7 @@ public class frownwin : Gtk.ApplicationWindow {
 				color: sbsel;
 			}
 			.panel {
-				background: sbbkg;
+				background: #00000000;
 				padding: 8px;
 				border-radius: 0px;
 				border: 0px;
@@ -5353,13 +5454,13 @@ public class frownwin : Gtk.ApplicationWindow {
 				padding: 0px;
 				border-radius: 0px;
 			}
-			.srccode {
+			.sourcecode {
 				padding: 8px; 
 				border-radius: 0; 
 				border-top: 2px solid sblin; 
 				border-left: 2px solid sblin; 
-				border-right: 2px solid sbhil; 
-				border-bottom: 2px solid sbhil; 
+				border-right: 2px solid sblit; 
+				border-bottom: 2px solid sblit; 
 				background: sbent; 
 				color: sbsel;	
 			}
@@ -5389,18 +5490,20 @@ public class frownwin : Gtk.ApplicationWindow {
 			.selected { 
 				background: sbhil; 
 			}""";
-			allcss = allcss.replace("sbbkg","#112633");
-			allcss = allcss.replace("sbsel","#50B5F2");
-			allcss = allcss.replace("sblin","#08131A");
-			allcss = allcss.replace("sbgry","#2A5F80");
-			allcss = allcss.replace("sbalt","#224c26");
-			allcss = allcss.replace("sbhil","#1D4259");
-			allcss = allcss.replace("sblit","#19394D");
-			allcss = allcss.replace("sbmrk","#153040");
-			allcss = allcss.replace("sbfld","#132C3B");
-			allcss = allcss.replace("sblow","#153040");
-			allcss = allcss.replace("sbshd","#0c1D26");
-			allcss = allcss.replace("sbent","#0E232E");
+			allcss = allcss.replace("sbbkg",sbbkg);
+			allcss = allcss.replace("sbsel",sbsel);
+			allcss = allcss.replace("sblin",sblin);
+			allcss = allcss.replace("sbgry",sbgry);
+			allcss = allcss.replace("sbalt",sbalt);
+			allcss = allcss.replace("sbhil",sbhil);
+			allcss = allcss.replace("sblit",sblit);
+			allcss = allcss.replace("sbmrk",sbmrk);
+			allcss = allcss.replace("sbfld",sbmrk);
+			allcss = allcss.replace("sblow",sblow);
+			allcss = allcss.replace("sbshd",sbshd);
+			allcss = allcss.replace("sbent",sbent);
+			allcss = allcss.replace("sbgut",sbgut);
+			allcss = allcss.replace("sbdim",sbdim);
 		Gtk.CssProvider allcsp = new Gtk.CssProvider();
 		allcsp.load_from_data(allcss.data);
 		Gdk.Display thisdisplay = Gdk.Display.get_default();
@@ -5428,7 +5531,12 @@ public class frownwin : Gtk.ApplicationWindow {
 		iobar.set_title_widget(titlelabel);
 		this.set_titlebar(iobar);
 		this.set_default_size(360, (720 - 46));
-		iobar.css_classes = { "window" };
+		iobar.css_classes = { "iobar" };
+		iobar.margin_top = 0;
+		iobar.margin_start = 0;
+		iobar.margin_end = 0;
+		iobar.margin_bottom = 0;
+		this.css_classes = { "window" };
 	
 // headerbr buttons
 
