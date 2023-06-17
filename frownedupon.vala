@@ -3,7 +3,7 @@
 // by c.p.brown 2023
 //
 //
-// status: outliner selecting, tagging & filtering...
+// status: adding priority flags...
 
 
 using GLib;
@@ -75,6 +75,7 @@ struct heading {
 	string			name;			// can be whatever
 	uint			id;			// hash of name + iterator + time
 	int			index;			// array index
+	bool			selected;		// is selected by user for display
 	int			stars;			// indentation
 	uint			priority;		// id of priority, one per heading
 	uint			todo;			// id of todo, one per heading
@@ -268,6 +269,13 @@ void deletemyinputs(uint[] d) {
 	indexinputs();
 	int64 dinte = GLib.get_real_time();
 	if (spew) { print("\ndelete inputs took %f microseconds\n",((double) (dinte - dints))); }
+}
+
+int getheadingboxposbyindex(int n) {
+	for (int q = 0; q < headingboxes.length; q++) {
+		if (headingboxes[q].index == n) { return q; }
+	}
+	return -1;
 }
 
 int getelementindexbyid(uint n) {
@@ -3556,7 +3564,7 @@ void restartui(int ww) {
 	vdiv.start_child = modeboxes[0];
 	modeboxes[0].content.append(new Outliner(hidx,modeboxes[0].id));
 	vdiv.end_child =  modeboxes[1];
-	modeboxes[1].content.append(new ParamBox(modeboxes[1].id));
+	modeboxes[1].content.append(new ParamBox(1,modeboxes[1].id));
 }
 
 //    ____________  ____   ____  ____________
@@ -3637,11 +3645,12 @@ public class OutputRow : Gtk.Box {
 		}
 		return "";
 	}
-	public OutputRow (int e, int idx) {
+	public OutputRow (int ind, int e, int idx) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 		elementid = elements[e].id;
 		outputid = outputs[idx].id;
-		print("OUTPUTROW: started (%d, %d)\n",e,idx);
-		print("OUTPUTROW: element[%d] %s, output[%d] %s)\n",e,elements[e].name,idx,outputs[idx].name);
+		print("%sOUTPUTROW: started (%d, %d)\n",tabs,e,idx);
+		print("%sOUTPUTROW: element[%d] %s, output[%d] %s)\n",tabs,e,elements[e].name,idx,outputs[idx].name);
 		edited = false;
 		if (idx < outputs.length) {
 			outputvar = new Gtk.Entry();
@@ -3654,7 +3663,7 @@ public class OutputRow : Gtk.Box {
 			outputcontainer.hexpand = true;
 
 // one-liners
-			print("OUTPUTROW: checking for one-liners...\n");
+			if (spew) { print("%sOUTPUTROW: checking for one-liners...\n",tabs); }
 			if (elements[e].type == "nametag" || elements[e].type == "propertydrawer") {
 				outputcontainer.set_orientation(HORIZONTAL);
 				outputcontainer.spacing = 0;
@@ -3684,7 +3693,7 @@ public class OutputRow : Gtk.Box {
 			}
 
 // edit output name
-			print("OUTPUTROW: adding output name signal...\n");
+			if (spew) { print("%sOUTPUTROW: adding output name signal...\n",tabs); }
 			outputvar.changed.connect(() => {
 				if (doup) {
 					int ee = getelementindexbyid(elementid);
@@ -3703,7 +3712,7 @@ public class OutputRow : Gtk.Box {
 
 // editable multiline text outputs
 			if (elements[e].type == "paragraph" || elements[e].type == "example" || elements[e].type == "srcblock" || elements[e].type == "table") {
-				print("OUTPUTROW: adding gtksourceview field for %s\n",elements[e].type);
+				if (spew) { print("%sOUTPUTROW: adding gtksourceview field for %s\n",tabs,elements[e].type); }
 				outputsubrow = new Gtk.Box(HORIZONTAL,0);
 				outputsubrow.append(outputvar);
 				outputscrollbox = new Gtk.Box(VERTICAL,0);
@@ -3744,7 +3753,7 @@ public class OutputRow : Gtk.Box {
 
 // refresh inputs for paragraph
 				if (elements[e].type == "paragraph") {
-					print("OUTPUTROW: adding val-var handling for %s\n",elements[e].type);
+					if (spew) { print("%sOUTPUTROW: adding val-var handling for %s\n",tabs,elements[e].type); }
 					outputvalevc = new Gtk.EventControllerFocus();
 					outputvaltext.add_controller(outputvalevc);
 					outputvalevc.leave.connect(() => {
@@ -3761,7 +3770,7 @@ public class OutputRow : Gtk.Box {
 									pbox.elminputlistbox.remove(pbox.elminputlistbox.get_first_child());
 								}
 								for (int i = 0; i < elements[ee].inputs.length; i++) {
-									InputRow elminputrow = new InputRow(e,i);
+									InputRow elminputrow = new InputRow((ind + 1),e,i);
 									pbox.elminputlistbox.append(elminputrow);
 								}
 								doup = true;
@@ -3778,7 +3787,7 @@ public class OutputRow : Gtk.Box {
 
 // paragraph is a special case as it may require eval, but isn't a param that creates an output like srcblock...
 				if (elements[e].type == "paragraph") {
-					print("OUTPUTROW: adding paragraph eval button...\n");
+					if (spew) { print("%sOUTPUTROW: adding paragraph eval button...\n",tabs); }
 					outputshowval = new Gtk.ToggleButton();
 					outputshowval.icon_name = "user-invisible";
 					outputshowval.set_css_classes ( { "button" } );
@@ -3787,7 +3796,6 @@ public class OutputRow : Gtk.Box {
 						int oo = getoutputindexbyid(outputid);
 						int ee = getelementindexbyid(elementid);
 						if (ee >= 0 && oo >= 0) {
-							print("outputshowval: output[%d] is %s, element[%d] is %s\n",oo,outputs[oo].name,ee,elements[ee].name);
 							if (outputshowval.active) {
 								string outval = evalmyparagraph(ee,oo);
 								outputvaltext.buffer.set_text("(%s)".printf(outval));
@@ -3803,7 +3811,7 @@ public class OutputRow : Gtk.Box {
 									outputvaltextbuff.get_iter_at_offset(out ss,mydiffs[d,0]);
 									outputvaltextbuff.get_iter_at_offset(out ff,mydiffs[d,1]);
 									outputvaltextbuff.apply_tag_by_name("difftag_%d".printf(d), ss, ff);
-									print("OUTPUTROW:\t\thighlighting tag from %d to %d...\n",mydiffs[d,0],mydiffs[d,1]);
+									if (spew) { print("%sOUTPUTROW:\t\thighlighting tag from %d to %d...\n",tabs,mydiffs[d,0],mydiffs[d,1]); }
 								}
 							} else {
 								outputvaltext.buffer.set_text(outputs[oo].value);
@@ -3868,6 +3876,7 @@ public class OutputRow : Gtk.Box {
 			this.margin_bottom = 0;
 			this.append(outputcontainer);
 		}
+		if (spew) { print("%sOUTPUTROW: ended\n",tabs); }
 	}
 }
 
@@ -3982,8 +3991,9 @@ public class ParamRow : Gtk.Box {
 			}
 		}
 	}
-	public ParamRow (int e, int idx) {
-		print("PARAMROW: started (element %d, param %d) %s, %s = %s\n",e,idx,elements[e].name, elements[e].params[idx].name, elements[e].params[idx].value);
+	public ParamRow (int ind, int e, int idx) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		if (spew) { print("%sPARAMROW: started (element %d, param %d) %s, %s = %s\n",tabs,e,idx,elements[e].name, elements[e].params[idx].name, elements[e].params[idx].value); }
 		elementid = elements[e].id;
 		paramid = elements[e].params[idx].id;
 		edited = false;
@@ -4063,7 +4073,7 @@ public class ParamRow : Gtk.Box {
 				tableswish = new Gtk.StackSwitcher();
 				tableswishbox = new Gtk.Box(VERTICAL,0);
 				if (rowcount > 0) {
-					print("PARAMROW: adding gtksourceview field for %s\n",elements[e].type);
+					if (spew) { print("%sPARAMROW: adding gtksourceview field for %s\n",tabs,elements[e].type); }
 					paramsubrow = new Gtk.Box(HORIZONTAL,0);
 					paramsubrow.append(paramvar);
 					paramscrollbox = new Gtk.Box(VERTICAL,0);
@@ -4073,11 +4083,7 @@ public class ParamRow : Gtk.Box {
 					paramvalorgtablebuff = new GtkSource.Buffer(paramvaltextbufftags);
 					paramvalorgtable = new GtkSource.View.with_buffer(paramvalorgtablebuff);
 					paramvalorgtable.buffer.set_text(elements[e].params[idx].value);
-					//paramvalorgtable.accepts_tab = true;
 					paramvalorgtable.set_monospace(true);
-					//paramvalorgtable.tab_width = 2;
-					//paramvalorgtable.indent_on_tab = true;
-					//paramvalorgtable.indent_width = 4;
 					paramvalorgtable.show_line_numbers = true;
 					paramvalorgtable.highlight_current_line = true;
 					paramvalorgtable.vexpand = true;
@@ -4114,10 +4120,6 @@ public class ParamRow : Gtk.Box {
 					orgtablescrollbox.append(paramvalorgtable);
 					orgtablescroll.set_child(orgtablescrollbox);
 				}
-				//print("PARAMROW: made table ui.\n");
-
-// hacked-together columnview
-
 				buildcolumnview();
 
 // swisher
@@ -4160,10 +4162,10 @@ public class ParamRow : Gtk.Box {
 				paramvaltextbuff.set_highlight_syntax(true);
 				paramvaltextbuff.set_style_scheme(GtkSource.StyleSchemeManager.get_default().get_scheme("frownedupon"));
 				for (int p = 0; p < elements[e].params.length; p++) {
-					if (spew) { print("PARAMROW: looking for language param: %s\n",elements[e].params[p].name); }
+					if (spew) { print("%sPARAMROW: looking for language param: %s\n",tabs,elements[e].params[p].name); }
 					if (elements[e].params[p].name == "language") {
 						language = elements[e].params[p].value;
-						if (spew) { print("PARAMROW: param src language is %s\n",language); }
+						if (spew) { print("%sPARAMROW: param src language is %s\n",tabs,language); }
 						if (language == "rebol3") { language = "rebol"; }
 						paramvaltextbuff.set_language(GtkSource.LanguageManager.get_default().get_language(language));
 						break;
@@ -4195,7 +4197,7 @@ public class ParamRow : Gtk.Box {
 
 // add eval button to src
 				if (elements[e].type == "srcblock" || elements[e].params[idx].type == "formula" ) {
-					print("PARAMROW:\tadding paragraph eval button...\n");
+					if (spew) { print("%sPARAMROW:\tadding paragraph eval button...\n",tabs); }
 					parameval = new Gtk.Button();
 					parameval.icon_name = "media-playback-start";
 					parameval.set_css_classes ( { "button" } );
@@ -4203,18 +4205,18 @@ public class ParamRow : Gtk.Box {
 						int ee = getelementindexbyid(elementid);
 						int pp = getparamindexbyid(ee,paramid);
 						if (ee >= 0 && pp >= 0) {
-							if (spew) { print("PARAMROW:\tchecking inputs for %s...\n",elements[ee].name); }
+							if (spew) { print("%sPARAMROW:\tchecking inputs for %s...\n",tabs,elements[ee].name); }
 							doup = false;
 							int[] deps = {};
 							for (int i = 0; i < elements[ee].inputs.length; i++) {
 								if (elements[ee].inputs[i] != null) {
-									if (spew) { print("PARAMROW:\t\tcollecting dependency: %s.%s.index: %d = %s\n",elements[ee].name,elements[ee].inputs[i].name, elements[ee].inputs[i].index, inputs[(elements[ee].inputs[i].index)].name); }
+									if (spew) { print("%sPARAMROW:\t\tcollecting dependency: %s.%s.index: %d = %s\n",tabs,elements[ee].name,elements[ee].inputs[i].name, elements[ee].inputs[i].index, inputs[(elements[ee].inputs[i].index)].name); }
 									deps += elements[ee].inputs[i].index;
 								}
 							}
 							int[] q = {};
 							if (deps.length > 0) { 
-								if (spew) { print("PARAMROW:\tsending %d inputs to evalpath()...\n",deps.length); }
+								if (spew) { print("%sPARAMROW:\tsending %d inputs to evalpath()...\n",tabs,deps.length); }
 								if ((ee in deps) == false) {
 									q = evalpath(deps,ee);
 								}
@@ -4225,7 +4227,7 @@ public class ParamRow : Gtk.Box {
 								Gtk.Box pbo = (Gtk.Box) this.parent.parent.parent.parent;
 								ElementBox elmo = (ElementBox) pbo.get_first_child();
 								while (elmo != null) {
-									if (elmo.index in q) { elmo.updatemyoutputs(); }
+									if (elmo.index in q) { elmo.updatemyoutputs(ind + 1); }
 									elmo = (ElementBox) elmo.get_next_sibling();
 								}
 // update sender's table ui
@@ -4235,10 +4237,10 @@ public class ParamRow : Gtk.Box {
 										if (elements[ee].params[i].type == "table") {
 											elmo = (ElementBox) parameval.get_ancestor(typeof(ElementBox));
 											ParamRow myrow = (ParamRow) elmo.elmparambox.get_first_child().get_next_sibling();
-											if (spew) { print("PARAMROW: updating org table:\n%s\n",elements[ee].params[i].value); }
+											if (spew) { print("%sPARAMROW: updating org table:\n%s\n",tabs,elements[ee].params[i].value); }
 											myrow.paramvalorgtable.buffer.text = elements[ee].params[i].value;
-											if (spew) { print("PARAMROW: verifying org table:\n%s\n",myrow.paramvalorgtable.buffer.text); }
-											if (spew) { print("PARAMROW: building columnview for %s.%s...\n",elements[ee].name,elements[ee].params[i].name); }
+											if (spew) { print("%sPARAMROW: verifying org table:\n%s\n",tabs,myrow.paramvalorgtable.buffer.text); }
+											if (spew) { print("%sPARAMROW: building columnview for %s.%s...\n",tabs,elements[ee].name,elements[ee].params[i].name); }
 											myrow.buildcolumnview();
 											break; // there's only one table per param element
 										}
@@ -4302,6 +4304,7 @@ public class ParamRow : Gtk.Box {
 			this.append(paramcontainer);
 			doup = true;
 		}
+		if (spew) { print("%sPARAMROW: ended.\n",tabs); }
 	}
 }
 
@@ -4312,8 +4315,9 @@ public class InputRow : Gtk.Box {
 	public uint elementid;
 	public uint inputid;
 	public string name;
-	public InputRow (int e, int idx) {
-		print("INPUTROW: started (%d, %d)\n",e,idx);
+	public InputRow (int ind, int e, int idx) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		print("%sINPUTROW: started (%d, %d)\n",tabs,e,idx);
 		inputid = inputs[idx].id;
 		elementid = elements[e].id;
 		if (idx < inputs.length) {
@@ -4322,14 +4326,14 @@ public class InputRow : Gtk.Box {
 			inputvar.set_css_classes ( { "label" } );
 			inputvar.margin_start = 10;
 			inputvar.margin_end = 10;
-			print("INPUTROW:\tinput name: %s\n",inputs[idx].name);
-			print("INPUTROW:\tinput default org: %s\n",inputs[idx].org);
+			print("%sINPUTROW:\tinput name: %s\n",tabs,inputs[idx].name);
+			print("%sINPUTROW:\tinput default org: %s\n",tabs,inputs[idx].org);
 			inputvar.set_text(inputs[idx].name);
 			inputdefvar = new Gtk.Entry();
 			inputdefvar.set_css_classes ( { "entry" } );
 			inputdefvar.set_text("");
 			if (inputs[idx].defaultv != null) {
-				print("INPUTROW:\tinput default value: %s\n",inputs[idx].defaultv);
+				print("%sINPUTROW:\tinput default value: %s\n",tabs,inputs[idx].defaultv);
 				inputdefvar.set_text(inputs[idx].defaultv);
 			}
 			inputdefvar.hexpand = true;
@@ -4339,7 +4343,6 @@ public class InputRow : Gtk.Box {
 			inputdefvar.set_css_classes ( { "autogen" } );
 			inputshowval.toggled.connect(() => {
 				int ii = getinputindexbyid(inputid);
-				print("inputshowval: inputs[%d] is %s\n",ii,inputs[ii].name);
 				if (ii >= 0) {
 					if (inputshowval.active) {
 						if (inputs[ii].source != null) {
@@ -4356,25 +4359,20 @@ public class InputRow : Gtk.Box {
 					this.destroy();
 				}
 			});
-			print("INPUTROW:\tinput label: %s\n",inputvar.get_text());
+			print("%sINPUTROW:\tinput label: %s\n",tabs,inputvar.get_text());
 			//inputcontainer = new Gtk.Box(HORIZONTAL,10);
 			this.append(inputvar);
 			this.append(inputdefvar);
 			this.append(inputshowval);
 			this.vexpand = false;
 			this.spacing = 0;
-
-// some elements can't edit inputs here
-			if (elements[e].type != "paragraph" && elements[e].type != "table") {
-				print("add input overrides here\n");
-			}
 			this.set_css_classes ( { "box" } );
 			this.margin_top = 0;
 			this.margin_start = 0;
 			this.margin_end = 0;
 			this.margin_bottom = 0;
-			//this.append(inputcontainer);
 		}
+		print("%sINPUTROW: ended.\n",tabs);
 	}
 }
 
@@ -4422,16 +4420,17 @@ public class ElementBox : Gtk.Box {
 	//private Gtk.DropTarget elmdroptarg;
 	//private int dox;
 	//private int doy;
-	public void updatemyoutputs() {
+	public void updatemyoutputs(int ind) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
 		bool wasdoup = doup;
 		bool doup = false;
 		int ee = getelementindexbyid(elementid);
 		if (elements[ee].type == "srcblock" || elements[ee].type == "table" || elements[ee].type == "paragraph") {
-			if (spew) { print("ELEMENTBOX: updating element %s ui outputs...\n",elements[ee].name); }
+			if (spew) { print("%sELEMENTBOX: updating element %s ui outputs...\n",tabs,elements[ee].name); }
 			if (elements[ee].outputs.length > 0) {
 				if (elements[ee].outputs[0].value != null) {
 					OutputRow elmo = (OutputRow) elmoutputbox.get_first_child().get_next_sibling();
-					if (spew) { print("ELEMENTBOX: writing %s.value...\n",elements[ee].outputs[0].name); }
+					if (spew) { print("%sELEMENTBOX: writing %s.value...\n",tabs,elements[ee].outputs[0].name); }
 					elmo.outputvaltext.buffer.text = elements[ee].outputs[0].value;
 					if (elements[ee].outputs.length > 1) {
 						for (int o = 1; o < elements[ee].outputs.length; o++) {
@@ -4446,14 +4445,15 @@ public class ElementBox : Gtk.Box {
 		}
 		doup = wasdoup;
 	}
-	public ElementBox (int idx, string typ) {
-		print("ELEMENTBOX: started (%d)\n",idx);
+	public ElementBox (int ind, int idx, string typ) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		print("%sELEMENTBOX: started (%d)\n",tabs,idx);
 		if (idx < elements.length) {
 			this.elementid = elements[idx].id;
 			this.type = elements[idx].type;
 			this.name = elements[idx].name; 
 			this.index = idx;
-			print("ELEMENTBOX:\tfound a %s element: %s\n",elements[idx].type,elements[idx].name);
+			print("%sELEMENTBOX:\tfound a %s element: %s\n",tabs,elements[idx].type,elements[idx].name);
 			elmbox = new Gtk.Box(VERTICAL,4);
 			elmtitlebar = new Gtk.Box(HORIZONTAL,0);
 			elmtitlebar.margin_top = 0;
@@ -4482,7 +4482,6 @@ public class ElementBox : Gtk.Box {
 			});
 			elmnamelayout = elmname.create_pango_layout(null);
 			this.append(elmtitlebar);
-			//elmbox.append(elmnamebar);
 			elmname.text = elements[idx].name;
 			this.name = elmname.text;
 			elmname.activate.connect(() => {
@@ -4504,11 +4503,6 @@ public class ElementBox : Gtk.Box {
 			if (elements[idx].inputs.length > 0) {
 				elminputbox = new Gtk.Box(VERTICAL,8);
 				elminputcontrolbox = new Gtk.Box(HORIZONTAL,0);
-				//elminputlistbox = new Gtk.Box(VERTICAL,0);
-				//elminputlistbox.margin_top = 0;
-				//elminputlistbox.margin_bottom = 0;
-				//elminputlistbox.margin_start = 0;
-				//elminputlistbox.margin_end = 0;
 				elminputlabel = new Gtk.Label("input");
 				elminputlabel.set_css_classes ( { "label" } );
 				elminputlabel.margin_start = 8;
@@ -4516,19 +4510,16 @@ public class ElementBox : Gtk.Box {
 				elminputlabel.margin_bottom = 8;
 				elminputcontrolbox.append(elminputlabel);
 				elminputbox.append(elminputcontrolbox);
-				//elminputbox.append(elminputlistbox);
 				elminputcontrolbox.margin_top = 0;
 				elminputcontrolbox.margin_bottom = 0;
 				elminputcontrolbox.margin_start = 0;
 				elminputcontrolbox.margin_end = 0;
 				elminputbox.set_css_classes ( { "panel" } );
-				print("ELEMENTBOX:\tfetching %d inputs...\n",elements[idx].inputs.length);
+				print("%sELEMENTBOX:\tfetching %d inputs...\n",tabs,elements[idx].inputs.length);
 				for (int i = 0; i < elements[idx].inputs.length; i++) {
-					
-					InputRow elminputrow = new InputRow(idx,elements[idx].inputs[i].index);
+					InputRow elminputrow = new InputRow((ind + 1),idx,elements[idx].inputs[i].index);
 					elminputbox.append(elminputrow);
 				}
-				//elminputlistbox.hexpand = true;
 				elminputbox.hexpand = true;
 				elminputbox.margin_top = 4;
 				elminputbox.margin_bottom = 0;
@@ -4536,36 +4527,28 @@ public class ElementBox : Gtk.Box {
 				elminputbox.margin_end = 0;
 				elmbox.append(elminputbox);
 			} else {
-				print("ELEMENTBOX: element %s has %d inputs\n",elements[idx].name,elements[idx].inputs.length);
+				print("%sELEMENTBOX: element %s has %d inputs\n",tabs,elements[idx].name,elements[idx].inputs.length);
 			}
 			if (elements[idx].params.length > 0) {
 				elmparambox = new Gtk.Box(VERTICAL,8);
 				elmparamcontrolbox = new Gtk.Box(HORIZONTAL,0);
-				//elmparamlistbox = new Gtk.Box(VERTICAL,0);
-				//elmparamlistbox.margin_top = 0;
-			//	elmparamlistbox.margin_bottom = 0;
-				//elmparamlistbox.margin_start = 0;
-				//elmparamlistbox.margin_end = 0;
 				elmparamlabel = new Gtk.Label("parameters");
 				elmparamlabel.set_css_classes ( { "label" } );
 				elmparamlabel.margin_start = 8;
 				elmparamlabel.margin_top = 4;
 				elmparamlabel.margin_bottom = 8;
-				//elmparamlabel.hexpand = true;
 				elmparamcontrolbox.append(elmparamlabel);
 				elmparambox.append(elmparamcontrolbox);
-				//elmparambox.append(elmparamlistbox);
 				elmparamcontrolbox.margin_top = 0;
 				elmparamcontrolbox.margin_bottom = 0;
 				elmparamcontrolbox.margin_start = 0;
 				elmparamcontrolbox.margin_end = 0;
 				elmparambox.set_css_classes ( { "panel" } );
-				print("ELMBOX:\tfetching %d params...\n",elements[idx].params.length);
+				print("%sELMBOX:\tfetching %d params...\n",tabs,elements[idx].params.length);
 				for (int i = 0; i < elements[idx].params.length; i++) {
-					ParamRow elmparamrow = new ParamRow(idx,i);
+					ParamRow elmparamrow = new ParamRow((ind + 1),idx,i);
 					elmparambox.append(elmparamrow);
 				}
-				//elmparamlistbox.hexpand = true;
 				elmparambox.hexpand = true;
 				elmparambox.margin_top = 4;
 				elmparambox.margin_bottom = 0;
@@ -4573,7 +4556,7 @@ public class ElementBox : Gtk.Box {
 				elmparambox.margin_end = 0;
 				elmbox.append(elmparambox);
 			} else {
-				print("ELEMENTBOX: element %s has %d params\n",elements[idx].name,elements[idx].params.length);
+				print("%sELEMENTBOX: element %s has %d params\n",tabs,elements[idx].name,elements[idx].params.length);
 			}
 			if (elements[idx].outputs.length > 0) {
 				elmoutputbox = new Gtk.Box(VERTICAL,8);
@@ -4590,9 +4573,9 @@ public class ElementBox : Gtk.Box {
 				elmoutputcontrolbox.margin_start = 0;
 				elmoutputcontrolbox.margin_end = 0;
 				elmoutputbox.set_css_classes ( { "panel" } );
-				print("ELMBOX:\tfetching %d outputs...\n",elements[idx].outputs.length);
+				print("%sELMBOX:\tfetching %d outputs...\n",tabs,elements[idx].outputs.length);
 				for (int i = 0; i < elements[idx].outputs.length; i++) {
-					OutputRow elmoutputrow = new OutputRow(idx,elements[idx].outputs[i].index);
+					OutputRow elmoutputrow = new OutputRow((ind + 1),idx,elements[idx].outputs[i].index);
 					elmoutputbox.append(elmoutputrow);
 				}
 				elmoutputbox.hexpand = true;
@@ -4685,7 +4668,7 @@ public class Outliner : Gtk.Box {
 		if (headings.length > 0) {
 			headingboxes = {};
 			for (int h = 0; h < headings.length; h++) {
-				HeadingBox hh = new HeadingBox(h);
+				HeadingBox hh = new HeadingBox(1,h);
 				headingboxes += hh;
 				outlinerscrollbox.append(headingboxes[(headingboxes.length - 1)]);
 				print("OUTLINER: added heading[%d] %s\n",h,headings[h].name);
@@ -4713,7 +4696,18 @@ public class Outliner : Gtk.Box {
 		this.append(outlinerfilterbox);
 	}
 }
-
+// headings vs heaingboxes
+// N = place in list, HIDX = unique id, INDEX = heading place in list
+// +--------------------------+---------------------------------+
+// | data                     | ui                              |
+// +-------------------+------+-----------------+-------+-------+
+// | headings[N].HIDX  |      | headingboxes[N] | HIDX  | INDEX |
+// +-------------------+------+-----------------+-------+-------+
+// | headings[0].12345 |   +--| headingboxes[0] | 23456 | 2     |
+// | headings[1].67891 |  / +-| headingboxes[1] | 78912 | 3     |
+// | headings[2].23456 |-+ /  |                 |       |       |
+// | headings[3].78912 |--+   |                 |       |       |
+// +-------------------+------+-----------------+-------+-------+
 public class HeadingBox : Gtk.Box {
 	public Gtk.Box hbox;
 	private Gtk.Entry headingname;
@@ -4728,43 +4722,51 @@ public class HeadingBox : Gtk.Box {
 	public uint headingid;
 	public int index;
 	public bool selected;
-	public void settodo (uint tdo) {
+	public void settodo (int ind, uint tdo) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		if (spew) { print("%sHEADINGBOX.SETTODO started...\n",tabs); }
 		string s = todos[(findtodoindexbyid(tdo,todos))].name;
 		Gtk.Button todobtn = new Gtk.Button.with_label(s);
 		todobtn.css_classes = { "tagbutton" };
 		todobtn.clicked.connect (() => {
-			doup = false;
-			int hb = headingboxes.length;
-			headingboxes = {};
-			Outliner myoutliner = (Outliner) todobtn.get_ancestor(typeof(Outliner));
-			while (myoutliner.outlinerscrollbox.get_first_child() != null) {
-				myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
-			}
-			if (hb != headings.length) {
-				for (int hd = 0; hd < headings.length; hd++) {
-					headingboxes += new HeadingBox(hd);
+			if (doup) {
+				if (spew) { print("HEADINGBOX.TODOBUTTON pressed...\n"); }
+				doup = false;
+				int hb = headingboxes.length;
+				headingboxes = {};
+				Outliner myoutliner = (Outliner) todobtn.get_ancestor(typeof(Outliner));
+				while (myoutliner.outlinerscrollbox.get_first_child() != null) {
+					myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
 				}
-			} else {
-				for (int hd = 0; hd < headings.length; hd++) {
-					if (findtodoidbyname(todobtn.label, todos) == headings[hd].todo) {
-						headingboxes += new HeadingBox(hd);
+				if (hb != headings.length) {
+					for (int hd = 0; hd < headings.length; hd++) {
+						if (spew) { print("HEADINGBOX.TODOBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
+						headingboxes += new HeadingBox(1,hd);
+					}
+				} else {
+					for (int hd = 0; hd < headings.length; hd++) {
+						if (findtodoidbyname(todobtn.label, todos) == headings[hd].todo) {
+							if (spew) { print("HEADINGBOX.TODOBUTTON retaining heading in filtered outliner: %s\n",headings[hd].name); }
+							headingboxes += new HeadingBox(1,hd);
+						}
 					}
 				}
+				for (int b = 0; b < headingboxes.length; b++) {
+					myoutliner.outlinerscrollbox.append(headingboxes[b]);
+				}
+				doup = true;
 			}
-			for (int b = 0; b < headingboxes.length; b++) {
-				myoutliner.outlinerscrollbox.append(headingboxes[b]);
-			}
-			doup = true;
 		});
 		headingtodobox.append(todobtn);
+		if (spew) { print("%sHEADINGBOX.SETTODO ended.\n",tabs); }
 	}
-	public HeadingBox (int idx) {
-		print("\nHEADINGBOX: started (idx %d) of %d.\n",idx,(headings.length - 1));
+	public HeadingBox (int ind, int idx) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		if (spew) { print("%sHEADINGBOX: started (idx %d) of %d.\n",tabs,idx,(headings.length - 1)); }
 		if (idx < headings.length) {
-			selected = false;
-			print("HEADINGBOX:\tmaking heading for: %s\n",headings[idx].name);
 			stars = headings[idx].stars;
 			headingid = headings[idx].id;
+			selected = headings[idx].selected;
 			index = idx;
 			hbox = new Gtk.Box(HORIZONTAL,4);
 			headinggrip = new Gtk.Box(HORIZONTAL,4);
@@ -4773,7 +4775,8 @@ public class HeadingBox : Gtk.Box {
 			headingdot.hexpand = false;
 			headingdot.margin_start = 4;
 			headingname = new Gtk.Entry();
-			headingname.set_css_classes( { "headingname" } );
+			headingname.css_classes = { "headingname" };
+			if (selected) { headingname.css_classes = {"headingname", "selected" }; }
 			headingname.margin_start = 4;
 			headingnamelayout = headingname.create_pango_layout(null);
 			headingname.changed.connect(() => {
@@ -4782,6 +4785,7 @@ public class HeadingBox : Gtk.Box {
 					if (hh >= 0) {
 						doup = false;
 						if (headingname.text.strip() != "") {
+							if (spew) { print("%s\tHEADINGBOX renaming from %s to %s\n",tabs,headings[hh].name,headingname.text.strip()); }
 							headings[hh].name = headingname.text.strip();
 							headingnamelayout.set_text(headings[hh].name, -1);
 							int pw, ph = 0;
@@ -4807,10 +4811,10 @@ public class HeadingBox : Gtk.Box {
 			headingprioritybox = new Gtk.Box(HORIZONTAL,0);
 			headingtaglistbox = new Gtk.Box(HORIZONTAL,0);
 			if (headings[idx].todo > 0) {
-				settodo(headings[idx].todo);
+				settodo((ind + 1),headings[idx].todo);
 			}
 
-			if (spew) { print("HEADINGBOX:\tassembling ui...\n"); }
+			if (spew) { print("%sHEADINGBOX: assembling ui...\n",tabs); }
 			hbox.append(headingdot);
 			hbox.append(headingtodobox);
 			hbox.append(headingprioritybox);
@@ -4835,72 +4839,67 @@ public class HeadingBox : Gtk.Box {
 			this.margin_end = 40;
 			this.margin_bottom = 2;
 			this.css_classes = { "heading" };
+			if (selected) { this.css_classes = {"heading", "selected" }; }
 			this.append(hbox);
 			Gtk.GestureClick thisclick = new Gtk.GestureClick();
 			this.add_controller(thisclick);
-			thisclick.begin.connect(() => {
-				int hh = getheadingindexbyid(headingid);
-				print("HEADINGBOX: selecting headingbox[%d], heading[%d] (%s)...\n",index,hh,headings[hh].name);
-				Gdk.Event e = thisclick.get_current_event();
-				Gdk.ModifierType t = e.get_modifier_state();
-// this headingbox outlinerscrollbox outlinerscroll outliner
-//          1              2               3           4
-				print("HEADINGBOX: setting selection css...\n");
-				this.selected = true;
-				Outliner myparent = (Outliner) this.get_ancestor(typeof(Outliner));
-				print("HEADINGBOX: checking control_mask : %s\n", t.to_string());
-				if (t == CONTROL_MASK) {
-					print("HEADINGBOX: CTRL+CLICK...\n");
-					int[] psel = myparent.selection;
-					if ((index in myparent.selection) == false) {
-						psel += index;
-						myparent.selection = psel;
-					}
-					foreach (int ps in psel) {
-						print("HEADINGBOX: \taccumulated selection : %d %s\n",ps,headings[ps].name);
-					}
-				} else {
-					print("HEADINGBOX: \tclearing selection css...\n");
-					foreach (int h in myparent.selection) { 
-						for (int u = 0; u < headingboxes.length; u++) {
-							if (headingboxes[u].index == h) {
-								headingboxes[u].set_css_classes( { "heading" } );
-								headingboxes[u].headingname.set_css_classes({"headingname"});
+			thisclick.pressed.connect(() => {
+				if (doup) {
+					doup = false;
+					int hh = getheadingindexbyid(headingid);
+					print("HEADINGBOX.thisclick selecting headingbox[%d], heading[%d] (%s)...\n",index,hh,headings[hh].name);
+					Gdk.Event e = thisclick.get_current_event();
+					Gdk.ModifierType t = e.get_modifier_state();
+	// this headingbox outlinerscrollbox outlinerscroll outliner
+	//          1              2               3           4
+					print("HEADINGBOX.thisclick setting selection css...\n");
+					print("HEADINGBOX.thisclick checking control_mask : %s\n",t.to_string());
+					Outliner myparent = (Outliner) this.get_ancestor(typeof(Outliner));
+					int[] psel = {};
+					for (int h = 0; h < headings.length; h++) { if (headings[h].selected) { psel += h; } }
+					if (t == CONTROL_MASK) {
+						print("HEADINGBOX.thisclick CTRL+CLICK...\n");
+						if ((index in psel) == false) { psel += index; }
+					} else {
+						print("HEADINGBOX.thisclick clearing selection...\n");
+						foreach (int h in psel) { 
+							headings[h].selected = false;
+							int u = getheadingboxposbyindex(h);
+							if (u >= 0) {
+								headingboxes[u].css_classes = { "heading" };
+								headingboxes[u].headingname.css_classes = {"headingname"};
 								headingboxes[u].selected = false;
 							}
 						}
+						psel = {index};
 					}
-					myparent.selection = {index};
-				}
-				print("HEADINGBOX: \tapplying selection css...\n");
-				foreach (int h in myparent.selection) {
-					for (int u = 0; u < headingboxes.length; u++) {
-						if (headingboxes[u].index == h) {
-							print("HEADINGBOX: selected heading : %d %s\n",h,headings[u].name);
-							headingboxes[u].set_css_classes( { "heading", "selected" } );
-							headingboxes[u].headingname.set_css_classes({"headingname", "selected"});
+					print("HEADINGBOX.thisclick applying selection css...\n");
+					foreach (int h in psel) {
+						headings[h].selected = true;
+						int u = getheadingboxposbyindex(h);
+						if (u >= 0) {
+							print("HEADINGBOX.thisclick selected heading : %d %s\n",h,headings[u].name);
+							headingboxes[u].css_classes = { "heading", "selected" };
+							headingboxes[u].headingname.css_classes = {"headingname", "selected"};
+							headingboxes[u].selected = true;
 						}
 					}
-				}
-				if (headingid >= 0) {
-					sel = headingid;
-					hidx = hh;
-					print("HEADINGBOX: selected headings[%d] %s...\n",hidx,headings[hh].name);
-// check pannelboxes for parameter panes, update them if not pinned...
-// ModalBox/box(content)/ParamBox
-// vdiv/ModalBox/content/Outliner/outlinerscroll/outlinerscrollbox/this
-//   6      5        4       3          2               1         
-					for (int m = 0; m < modeboxes.length; m++) {
-						//print("HEADINGBOX: checking modeboxes[%d].contenttype: %s\n",m,modeboxes[m].contenttype);
-						if (modeboxes[m].contenttype == "parambox") {
-							modeboxes[m].content.remove(modeboxes[m].content.get_first_child());
-							modeboxes[m].content.append(new ParamBox(modeboxes[m].id));
+					if (headingid >= 0) {
+						sel = headingid;
+						hidx = hh;      
+						for (int m = 0; m < modeboxes.length; m++) {
+							if (modeboxes[m].contenttype == "parambox") {
+								modeboxes[m].content.remove(modeboxes[m].content.get_first_child());
+								modeboxes[m].content.append(new ParamBox(1,modeboxes[m].id));
+							}
 						}
 					}
+					doup = true;
 				}
+				print("HEADINGBOX.thisclick ended.\n");
 			});
 		}
-		print("HEADINGBOX: ended.\n");
+		print("%sHEADINGBOX: ended.\n",tabs);
 	}
 }
 
@@ -4912,34 +4911,39 @@ public class ParamBox : Gtk.Box {
 	public uint owner;
 	public string name;
 	private ElementBox elm;
-	public ParamBox(uint o) {
-		print("PARAMBOX: created...\n");
+	public ParamBox(int ind, uint o) {
+		string tabs = ("%*s").printf(ind," ").replace(" ","\t");
+		print("%sPARAMBOX: created...\n",tabs);
 		owner = o;
 		type = "parambox";
-		this.name = "%s_elements".printf(headings[hidx].name);
+		this.name = "heading_elements";
 		this.set_orientation(VERTICAL);
 		this.spacing = 0;
 		this.vexpand = true;
 		this.hexpand = true;
 		this.set_css_classes( { "box" } );
-		if (headings[hidx].elements.length > 0) {
-			print("PARAMBOX: adding pbox and pscroll...\n");
+		if (headings.length > 0) {
+			print("%sPARAMBOX: adding pbox and pscroll...\n",tabs);
 			pscroll = new Gtk.ScrolledWindow();
 			pbox = new Gtk.Box(VERTICAL,10);
 			pbox.hexpand = true;
 			pbox.vexpand = true;
 			pscroll.set_propagate_natural_height(true);
-			print("PARAMBOX: heading[%d] = %s\n",hidx,headings[hidx].name);
-			for (int e = 0; e < headings[hidx].elements.length; e++) {
-				print("PARAMBOX: checking element %s for type....\n",headings[hidx].elements[e].name);
-				elm = new ElementBox(headings[hidx].elements[e].index,headings[hidx].elements[e].type);
-				pbox.append(elm);
+			for (int h = 0; h < headings.length; h++) {
+				if (headings[h].selected) {
+					print("%sPARAMBOX: heading[%d] = %s\n",tabs,h,headings[h].name);
+					for (int e = 0; e < headings[h].elements.length; e++) {
+						print("%sPARAMBOX: checking element %s for type....\n",tabs,headings[h].elements[e].name);
+						elm = new ElementBox((ind + 1),headings[h].elements[e].index,headings[h].elements[e].type);
+						pbox.append(elm);
+					}
+				}
 			}	
 			pbox.set_css_classes( { "box" } );
 			pscroll.set_child(pbox);
 			this.append(pscroll);
-		} else { print("PARAMBOX: nothing to do here...\n"); }
-		print("PARAMBOX: create ended.\n\n");
+		} else { print("%sPARAMBOX: nothing to do here...\n",tabs); }
+		print("%sPARAMBOX: create ended.\n",tabs);
 	}
 }
 
@@ -5014,7 +5018,7 @@ public class ModalBox : Gtk.Box {
 					this.contenttype = "parambox";
 					content.remove(content.get_first_child());
 					print("MODALBOX: adding parameter pane to content...\n");
-					content.append(new ParamBox(id));
+					content.append(new ParamBox(1,id));
 					typelistpop.popdown();
 				}
 				if (buh.label == "Outliner") {
@@ -5112,7 +5116,7 @@ public class ModalBox : Gtk.Box {
 														Outliner myoutliner = (Outliner) tagbtn.get_ancestor(typeof(Outliner));
 														for (int hd = 0; hd < headings.length; hd++) {
 															if (findtagidbyname(tagbtn.label, tags) in headings[hd].tags) {
-																headingboxes += new HeadingBox(hd);
+																headingboxes += new HeadingBox(1,hd);
 															}
 														}
 														while (myoutliner.outlinerscrollbox.get_first_child() != null) {
@@ -5173,23 +5177,25 @@ public class ModalBox : Gtk.Box {
 							pduh.css_classes = { "button" };
 							headingtodopopbox.append(pduh);
 							pduh.clicked.connect((nuh) => {
-								uint tdx = findtodoidbyname(nuh.label, todos);
-								if (tdx != -1) {
-									for (int h = 0; h < headingboxes.length; h++) {
-										if (headingboxes[h].selected) {
-											//Gtk.Box htdb = (Gtk.Box) headingboxes[h].headingtodobox;
-											while (headingboxes[h].headingtodobox.get_first_child() != null) {
-												headingboxes[h].headingtodobox.remove(headingboxes[h].headingtodobox.get_first_child());
+								if (doup) {
+									doup = false;
+									if (spew) { print("MODALBOX: TODOPOPMENUBUTTON selected %s\n",nuh.label); }
+									uint tdx = findtodoidbyname(nuh.label, todos);
+									if (tdx != -1) {
+										for (int h = 0; h < headingboxes.length; h++) {
+											if (headingboxes[h].selected) {
+												while (headingboxes[h].headingtodobox.get_first_child() != null) {
+													headingboxes[h].headingtodobox.remove(headingboxes[h].headingtodobox.get_first_child());
+												}
+												int hidx = headingboxes[h].index;
+												if (spew) { print("MODALBOX: applying %s to selected heading[%d] %s\n",nuh.label,hidx,headings[hidx].name); }
+												headings[hidx].todo = tdx;
+												headingboxes[h].settodo(1,tdx);
 											}
-											int hidx = headingboxes[h].index;
-											if (spew) { print("selected heading: %d %s\n",hidx,headings[hidx].name); }
-											headings[hidx].todo = tdx;
-											headingboxes[h].settodo(tdx);
-											//headingboxes[h].headingtodobox.append(todobtn);
-											//htdb.append(todobtn);
 										}
-									}
-								} else { print("%s doesn't match any todo names...\n",nuh.label); }
+									} else { print("ERROR: %s doesn't match any todo names...\n",nuh.label); }
+									doup = true;
+								}
 								headingtodopop.popdown();
 							});
 						}
@@ -5252,7 +5258,7 @@ public class ModalBox : Gtk.Box {
 												Outliner thisoutliner = (Outliner) pribtn.get_ancestor(typeof(Outliner));
 												for (int hd = 0; hd < headings.length; hd++) {
 													if (findpriorityidbyname(pribtn.label, priorities) == headings[hd].priority) {
-														headingboxes += new HeadingBox(hd);
+														headingboxes += new HeadingBox(1,hd);
 													}
 												}
 												while (thisoutliner.outlinerscrollbox.get_first_child() != null) {
@@ -5305,6 +5311,14 @@ public class frownwin : Gtk.ApplicationWindow {
 	construct {
 
 		paneltypes = {"Outliner", "Parameters", "NodeGraph", "ProcessGraph", "TimeLine"};
+
+// default todos, defs get loaded when there's nothing in the orgfile
+
+		tododef = {"[0_TODO]", "[1_ONIT]", "[2_REDO]", "[3_WAIT]", "[4_NOPE]", "[5_DONE]"};
+
+// default priorities
+
+		prioritydef = {"A","F","A"};
 
 // named colors
 
