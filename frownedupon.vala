@@ -4621,10 +4621,9 @@ public class Outliner : Gtk.Box {
 	private Gtk.Box outlinercontrolbox;
 	private Gtk.Box outlinersearchbox;
 	private Gtk.Box outlinerfilterbox;
-	private Gtk.Button outlineraddheading;
-	private Gtk.Button outlinerremheading;
 	private Gtk.ToggleButton outlinersearchtoggle;
 	private Gtk.ToggleButton outlinerfiltertoggle;
+	private Gtk.Entry outlinersearchfield;
 	public uint owner;
 	public int[] selection;
 	public Outliner (int s, uint u) {
@@ -4657,19 +4656,29 @@ public class Outliner : Gtk.Box {
 		outlinerfilterbox = new Gtk.Box(HORIZONTAL,4);
 		outlinersearchbox = new Gtk.Box(HORIZONTAL,4);
 		outlinercontrolbox = new Gtk.Box(HORIZONTAL,4);
+		outlinersearchtoggle = new Gtk.ToggleButton();
+		outlinerfiltertoggle = new Gtk.ToggleButton();
+		outlinersearchfield = new Gtk.Entry();
+
 		outlinerfilterbox.visible = false;
 		outlinersearchbox.visible = false;
-		outlinersearchtoggle = new Gtk.ToggleButton();
+
+		outlinersearchfield.hexpand = true;
+
+		outlinersearchtoggle.css_classes = { "button" };
+		outlinerfiltertoggle.css_classes = { "button" };
+		outlinersearchfield.css_classes = { "entry" };
+
 		outlinersearchtoggle.icon_name = "edit-find";
-		outlinerfiltertoggle = new Gtk.ToggleButton();
 		outlinerfiltertoggle.icon_name = "view-more";
-		outlineraddheading = new Gtk.Button.with_label("+");
-		outlinerremheading = new Gtk.Button.with_label("-");
-		outlinercontrolbox.append(outlineraddheading);
-		outlinercontrolbox.append(outlinerremheading);
+
 		outlinercontrolbox.append(outlinersearchtoggle);
+		outlinercontrolbox.append(outlinersearchfield);
 		outlinercontrolbox.append(outlinerfiltertoggle);
 		outlinerscroll.set_child(outlinerscrollbox);
+
+		outlinercontrolbox.css_classes = { "button" };
+
 		this.append(outlinerscroll);
 		this.append(outlinercontrolbox);
 		this.append(outlinersearchbox);
@@ -4789,7 +4798,43 @@ public class HeadingBox : Gtk.Box {
 				});
 				headingtodobox.append(todobtn);
 			}
-
+			if (headings[idx].tags.length > 0) {
+				for (int g = 0; g < headings[idx].tags.length; g++) {
+					string tagn = findtagnamebyid(headings[idx].tags[g],tags);
+					Gtk.Button tagbtn = new Gtk.Button.with_label(tagn);
+					tagbtn.css_classes = { "tagbutton" };
+					tagbtn.clicked.connect (() => {
+						if (doup) {
+							if (spew) { print("[UX] HEADINGBOX.TAGBUTTON pressed...\n"); }
+							doup = false;
+							int hb = headingboxes.length;
+							headingboxes = {};
+							Outliner myoutliner = (Outliner) tagbtn.get_ancestor(typeof(Outliner));
+							while (myoutliner.outlinerscrollbox.get_first_child() != null) {
+								myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
+							}
+							if (hb != headings.length) {
+								for (int hd = 0; hd < headings.length; hd++) {
+									if (spew) { print("[UX] HEADINGBOX.TAGBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
+									headingboxes += new HeadingBox(1,hd);
+								}
+							} else {
+								for (int hd = 0; hd < headings.length; hd++) {
+									if (isinuint(findtagidbyname(tagbtn.label, tags), headings[hd].tags)) {
+										if (spew) { print("[UX] HEADINGBOX.TAGBUTTON retaining heading in filtered outliner: %s\n",headings[hd].name); }
+										headingboxes += new HeadingBox(1,hd);
+									}
+								}
+							}
+							for (int b = 0; b < headingboxes.length; b++) {
+								myoutliner.outlinerscrollbox.append(headingboxes[b]);
+							}
+							doup = true;
+						}
+					});
+					headingtaglistbox.append(tagbtn);
+				}
+			}
 			if (spew) { print("[UI]%sHEADINGBOX: assembling ui...\n",tabs); }
 			hbox.append(headingdot);
 			hbox.append(headingtodobox);
@@ -5073,7 +5118,7 @@ public class ModalBox : Gtk.Box {
 							pduh.clicked.connect((nuh) => {
 								if (doup) {
 									doup = false;
-									if (spew) { print("MODALBOX: TAGPOPMENUBUTTON selected %s\n",nuh.label); }
+									if (spew) { print("[UX] MODALBOX: TAGPOPMENUBUTTON selected %s\n",nuh.label); }
 									uint tdx = findtagidbyname(nuh.label, tags);
 									if (tdx != -1) {
 										int tidx = findtagindexbyid(tdx,tags);
@@ -5083,7 +5128,7 @@ public class ModalBox : Gtk.Box {
 													headingboxes[h].headingtaglistbox.remove(headingboxes[h].headingtaglistbox.get_first_child());
 												}
 												int hidx = headingboxes[h].index;
-												if (spew) { print("MODALBOX: applying %s to selected heading[%d] %s\n",nuh.label,hidx,headings[hidx].name); }
+												if (spew) { print("[UX] MODALBOX: applying %s to selected heading[%d] %s\n",nuh.label,hidx,headings[hidx].name); }
 												if (isinuint(tdx, headings[hidx].tags) == false) {
 													headings[hidx].tags += tdx;
 													if (isinuint(headings[hidx].id,tags[tidx].headings) == false) {
@@ -5095,7 +5140,7 @@ public class ModalBox : Gtk.Box {
 														tagbtn.css_classes = { "tagbutton" };
 														tagbtn.clicked.connect (() => {
 															if (doup) {
-																if (spew) { print("HEADINGBOX.TAGBUTTON pressed...\n"); }
+																if (spew) { print("[UX] HEADINGBOX.TAGBUTTON pressed...\n"); }
 																doup = false;
 																int hb = headingboxes.length;
 																headingboxes = {};
@@ -5105,7 +5150,7 @@ public class ModalBox : Gtk.Box {
 																}
 																if (hb != headings.length) {
 																	for (int hd = 0; hd < headings.length; hd++) {
-																		if (spew) { print("HEADINGBOX.TAGBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
+																		if (spew) { print("[UX] HEADINGBOX.TAGBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
 																		headingboxes += new HeadingBox(1,hd);
 																	}
 																} else {
@@ -5134,67 +5179,74 @@ public class ModalBox : Gtk.Box {
 							});
 						}
 						headingtagpopbox.append(headingtagnameentry);
-						headingtagnameentry.editing_done.connect(() => {
-							string nn = headingtagnameentry.text.strip();
-							if (nn != "") {
-								int tt = findtagindexbyname(nn,tags);
-								tag tg = new tag();
-								if (tt > 0) { tg = tags[tt]; }
-								if (tt < 0) {
-									tg.name = nn;
-									tg.id = makemeahash(nn,tags.length);
-								}
-								for (int h = 0; h < headingboxes.length; h++) {
-									if (headingboxes[h].selected) {
-										while (headingboxes[h].headingtaglistbox.get_first_child() != null) {
-											headingboxes[h].headingtaglistbox.remove(headingboxes[h].headingtaglistbox.get_first_child());
-										}
-										int hidx = headingboxes[h].index;
-										if (spew) { print("MODALBOX: applying %s to selected heading[%d] %s\n",nn,hidx,headings[hidx].name); }
-										if (isinuint(tg.id, headings[hidx].tags) == false) {
-											headings[hidx].tags += tg.id;
-											if (isinuint(headings[hidx].id,tg.headings) == false) {
-												tg.headings += headings[hidx].id;
+						headingtagnameentry.activate.connect(() => {
+							if (doup) {
+								doup = false;
+								string nn = headingtagnameentry.text.strip();
+								if (nn != "") {
+									int tt = findtagindexbyname(nn,tags);
+									tag tg = new tag();
+									if (tt >= 0 && tt < (tags.length - 1)) { tg = tags[tt]; } else {
+										tg.name = nn;
+										tg.id = makemeahash(nn,tags.length);
+									}
+									tags += tg;
+									tt = findtagindexbyid(tg.id,tags);
+									if (spew) { print("[UX] MODALBOX: tag[%d] name is %s, id is %u\n",tt,tg.name,tg.id); }
+									for (int h = 0; h < headingboxes.length; h++) {
+										if (headingboxes[h].selected) {
+											while (headingboxes[h].headingtaglistbox.get_first_child() != null) {
+												headingboxes[h].headingtaglistbox.remove(headingboxes[h].headingtaglistbox.get_first_child());
 											}
-											for (int g = 0; g < headings[hidx].tags.length; g++) {
-												string tagn = findtagnamebyid(headings[hidx].tags[g],tags);
-												Gtk.Button tagbtn = new Gtk.Button.with_label(tagn);
-												tagbtn.css_classes = { "tagbutton" };
-												tagbtn.clicked.connect (() => {
-													if (doup) {
-														if (spew) { print("HEADINGBOX.TAGBUTTON pressed...\n"); }
-														doup = false;
-														int hb = headingboxes.length;
-														headingboxes = {};
-														Outliner myoutliner = (Outliner) tagbtn.get_ancestor(typeof(Outliner));
-														while (myoutliner.outlinerscrollbox.get_first_child() != null) {
-															myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
-														}
-														if (hb != headings.length) {
-															for (int hd = 0; hd < headings.length; hd++) {
-																if (spew) { print("HEADINGBOX.TAGBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
-																headingboxes += new HeadingBox(1,hd);
+											int hidx = headingboxes[h].index;
+											if (spew) { print("[UX] MODALBOX: applying %s to selected heading[%d] %s\n",nn,hidx,headings[hidx].name); }
+											if (isinuint(tg.id, headings[hidx].tags) == false) {
+												headings[hidx].tags += tg.id;
+												if (isinuint(headings[hidx].id,tg.headings) == false) {
+													tg.headings += headings[hidx].id;
+												}
+												for (int g = 0; g < headings[hidx].tags.length; g++) {
+													string tagn = findtagnamebyid(headings[hidx].tags[g],tags);
+													Gtk.Button tagbtn = new Gtk.Button.with_label(tagn);
+													tagbtn.css_classes = { "tagbutton" };
+													tagbtn.clicked.connect (() => {
+														if (doup) {
+															if (spew) { print("[UX] HEADINGBOX.TAGBUTTON pressed...\n"); }
+															doup = false;
+															int hb = headingboxes.length;
+															headingboxes = {};
+															Outliner myoutliner = (Outliner) tagbtn.get_ancestor(typeof(Outliner));
+															while (myoutliner.outlinerscrollbox.get_first_child() != null) {
+																myoutliner.outlinerscrollbox.remove(myoutliner.outlinerscrollbox.get_first_child());
 															}
-														} else {
-															for (int hd = 0; hd < headings.length; hd++) {
-																if (isinuint(findtagidbyname(tagbtn.label, tags), headings[hd].tags)) {
-																	if (spew) { print("HEADINGBOX.TAGBUTTON retaining heading in filtered outliner: %s\n",headings[hd].name); }
+															if (hb != headings.length) {
+																for (int hd = 0; hd < headings.length; hd++) {
+																	if (spew) { print("[UX] HEADINGBOX.TAGBUTTON restoring heading to the outliner: %s\n",headings[hd].name); }
 																	headingboxes += new HeadingBox(1,hd);
 																}
+															} else {
+																for (int hd = 0; hd < headings.length; hd++) {
+																	if (isinuint(findtagidbyname(tagbtn.label, tags), headings[hd].tags)) {
+																		if (spew) { print("[UX] HEADINGBOX.TAGBUTTON retaining heading in filtered outliner: %s\n",headings[hd].name); }
+																		headingboxes += new HeadingBox(1,hd);
+																	}
+																}
 															}
+															for (int b = 0; b < headingboxes.length; b++) {
+																myoutliner.outlinerscrollbox.append(headingboxes[b]);
+															}
+															doup = true;
 														}
-														for (int b = 0; b < headingboxes.length; b++) {
-															myoutliner.outlinerscrollbox.append(headingboxes[b]);
-														}
-														doup = true;
-													}
-												});
-												headingboxes[h].headingtaglistbox.append(tagbtn);
+													});
+													headingboxes[h].headingtaglistbox.append(tagbtn);
+												}
 											}
 										}
 									}
 								}
-								if (tt < 0) { tags += tg; }
+								headingtagnameentry.text = "";
+								doup = true;
+								headingtagpop.popdown();
 							}
 						});
 						doup = true;
@@ -5556,7 +5608,7 @@ public class frownwin : Gtk.ApplicationWindow {
 				border: 0px;
 			}
 			.box {
-				background: sbbkg;
+				background: sblow;
 				padding: 0px;
 				border-radius: 0px;
 			}
@@ -5588,13 +5640,21 @@ public class frownwin : Gtk.ApplicationWindow {
 			.paned {
 				min-width: 20px; 
 				min-height: 20px; 
-				border-width: 4px; 
-				border-color: sbbkg; 
-				border-style: solid; 
-				background: repeating-linear-gradient( -45deg, sbshd, sbshd 4px, sbbkg 5px, sbbkg 9px);
+				border-radius: 0; 
+				border-top: 4px solid sbhil; 
+				border-left: 4px solid sbhil; 
+				border-right: 4px solid sblin; 
+				border-bottom: 4px solid sblin;
+				margin-left: 0px; 
+				margin-right: 0px;
+				margin-top: 0px;
+				margin-bottom: 0px;
+				background: repeating-linear-gradient( -45deg, sblow, sblow 4px, sbbkg 5px, sbbkg 9px);
 			}
 			.selected { 
-				background: sbhil; 
+				background: sbhil;
+				border-top: 2px solid sblit; 
+				border-left: 2px solid sblit; 
 			}""";
 			allcss = allcss.replace("sbbkg",sbbkg);
 			allcss = allcss.replace("sbsel",sbsel);
